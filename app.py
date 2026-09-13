@@ -172,6 +172,10 @@ if 'mistakes' not in st.session_state:
 
 st.markdown('<div class="main-header">Ancient History Examination Portal</div>', unsafe_allow_html=True)
 
+if not PYPDF_AVAILABLE:
+    st.error("🚨 CRITICAL ERROR: pypdf is NOT installed. Ensure requirements.txt is deployed.")
+else:
+    st.success("✅ pypdf is installed and ready.")
 # ----------------- TOP-LEVEL NAVIGATION -----------------
 app_mode = st.sidebar.radio("App Mode", ["Student Portal", "Admin & Analysis Dashboard"])
 st.sidebar.markdown("---")

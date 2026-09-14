@@ -164,28 +164,35 @@ def get_student_questions(student_name, phase):
                 return parsed, filename
     return fallback[student_name], "PDF File Missing"
 
-def render_dynamic_timer(time_left):
+# ----------------- DYNAMIC TIMER FUNCTION -----------------
+def render_dynamic_timer(time_left, q_index, phase):
+    """Injects JS to show a live countdown with unique IDs to bypass Streamlit caching."""
     timer_html = f"""
     <div style="text-align: left; font-family: sans-serif; font-size: 22px; font-weight: bold; color: #d9534f; background: rgba(255,255,255,0.8); padding: 10px; border-radius: 8px; width: 200px; border: 2px solid #d9534f; margin-bottom: 15px;">
-        ⏱️ <span id="time_span">{time_left}</span>s left
+        ⏱️ <span id="time_span_{phase}_{q_index}">{time_left}</span>s left
     </div>
     <script>
-        var timeLeft = {time_left};
-        var timerId = setInterval(function() {{
-            timeLeft--;
-            var span = document.getElementById("time_span");
-            if (span) span.innerText = Math.max(0, timeLeft);
-            if (timeLeft <= 0) {{
-                clearInterval(timerId);
-                var buttons = window.parent.document.querySelectorAll("button");
-                for (var i = 0; i < buttons.length; i++) {{
-                    if (buttons[i].innerText.includes("Submit & Next")) {{
-                        buttons[i].click();
-                        break;
+        // Wrapping in an IIFE (Immediately Invoked Function Expression) prevents variable collisions
+        (function() {{
+            var timeLeft = {time_left};
+            var span = document.getElementById("time_span_{phase}_{q_index}");
+            
+            var timerId = setInterval(function() {{
+                timeLeft--;
+                if (span) span.innerText = Math.max(0, timeLeft);
+                if (timeLeft <= 0) {{
+                    clearInterval(timerId);
+                    // Find and click the Streamlit submit button automatically
+                    var buttons = window.parent.document.querySelectorAll("button");
+                    for (var i = 0; i < buttons.length; i++) {{
+                        if (buttons[i].innerText.includes("Submit & Next")) {{
+                            buttons[i].click();
+                            break;
+                        }}
                     }}
                 }}
-            }}
-        }}, 1000);
+            }}, 1000);
+        }})();
     </script>
     """
     components.html(timer_html, height=70)
@@ -211,6 +218,9 @@ if 'current_user' not in st.session_state:
 
 st.markdown('<div class="main-header">Ancient History Examination Portal</div>', unsafe_allow_html=True)
 
+if not PYPDF_AVAILABLE:
+    st.error("🚨 CRITICAL ERROR: pypdf is NOT installed. Ensure requirements.txt is deployed.")
+
 app_mode = st.sidebar.radio("App Mode", ["Student Portal", "Admin & Analysis Dashboard"])
 st.sidebar.markdown("---")
 
@@ -218,6 +228,29 @@ if app_mode == "Admin & Analysis Dashboard":
     st.header("📊 Admin Dashboard & Weakness Analysis")
     st.write("Detailed breakdown of student performance, mistake tracking, and suggested focus areas.")
     
+    with st.expander("⚠️ Danger Zone: Reset System"):
+        st.warning("This will permanently delete all student scores, mistakes, and test progress.")
+        if st.button("Reset All Data"):
+            # 1. Reset the Global Shared Dictionary
+            global_data["marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0}
+            global_data["adv_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0}
+            global_data["completed_basic"] = {"Rajat": False, "Manab": False, "Subho": False}
+            global_data["completed_adv"] = {"Rajat": False, "Manab": False, "Subho": False}
+            global_data["mistakes"] = {"Rajat": [], "Manab": [], "Subho": []}
+            
+            # 2. Clear the Streamlit Cache
+            st.cache_resource.clear()
+            
+            # 3. Clear Local Session State (timers, active test indexes)
+            keys_to_keep = ['logged_in', 'current_user']
+            for key in list(st.session_state.keys()):
+                if key not in keys_to_keep:
+                    del st.session_state[key]
+                    
+            st.success("All data has been wiped. Starting fresh!")
+            time.sleep(1) # Brief pause so the user sees the success message
+            st.rerun()
+
     students = ["Rajat", "Manab", "Subho"]
     
     # Refresh button to fetch latest scores from other users
@@ -348,7 +381,7 @@ elif app_mode == "Student Portal":
                     time_left = max(0, 30 - elapsed)
                     
                     st.subheader(f"Question {idx+1} of {len(questions)}")
-                    render_dynamic_timer(time_left)
+                    render_dynamic_timer(time_left, idx, "basic")
                     
                     with st.form(key=f"basic_form_{idx}"):
                         st.write(f"**{q_data['q']}**")
@@ -431,7 +464,7 @@ elif app_mode == "Student Portal":
                     time_left = max(0, 30 - elapsed)
                     
                     st.subheader(f"Question {idx+1} of {len(adv_questions)}")
-                    render_dynamic_timer(time_left)
+                    render_dynamic_timer(time_left, idx, "adv")
                     
                     with st.form(key=f"adv_form_{idx}"):
                         st.write(f"**{q_data['q']}**")

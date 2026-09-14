@@ -77,9 +77,9 @@ CREDENTIALS = {
 }
 
 PDF_MAPPING_BASIC = {
-    "Rajat": ["ncient_history_set_1.pdf", "ancient_history_set_1.pdf"],
-    "Manab": ["ncient_history_set_2.pdf", "ancient_history_set_2.pdf"],
-    "Subho": ["ncient_history_set_3.pdf", "ancient_history_set_3.pdf"]
+    "Rajat": ["ancient_history_set_1.pdf"],
+    "Manab": ["ancient_history_set_2.pdf"],
+    "Subho": ["ancient_history_set_3.pdf"]
 }
 
 PDF_MAPPING_ADVANCED = {

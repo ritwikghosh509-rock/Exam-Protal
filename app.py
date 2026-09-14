@@ -85,7 +85,7 @@ PDF_MAPPING_BASIC = {
 PDF_MAPPING_ADVANCED = {
     "Rajat": ["Ancient_Indian_History_Set_1.pdf"],
     "Manab": ["Ancient_Indian_History_Set_2.pdf"],
-    "Subho": ["Ancient_Indian_History_Set_3.pdf"]
+    "Subho": ["Ancient_Indian_History_Set_1.pdf"]
 }
 
 # ----------------- PDF PARSER FUNCTION -----------------

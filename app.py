@@ -12,7 +12,7 @@ try:
 except ImportError:
     PYPDF_AVAILABLE = False
 
-# Page Configuration (Sidebar expanded by default)
+# Page Configuration
 st.set_page_config(page_title="History Exam Portal", layout="wide", initial_sidebar_state="expanded")
 
 # ----------------- ANTI-CHEATING CSS & PREMIUM STYLING -----------------
@@ -113,7 +113,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ----------------- ANTI-CHEATING JAVASCRIPT (Disable Right-Click) -----------------
+# ----------------- ANTI-CHEATING JAVASCRIPT -----------------
 components.html(
     """
     <script>
@@ -157,33 +157,36 @@ def extract_questions_from_pdf(filepath):
         reader = PdfReader(filepath)
         full_text = "\n" + "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
         
-        # UPDATED: More rigid split pattern so internal numbers like "1. Nanda Devi" do not break the parser
-        split_pattern = r'(?i)\n\s*Q(?:uestion)?\s*\d+[\s\.\-\:]+'
-        raw_blocks = re.split(split_pattern, full_text)[1:]
+        parts = re.split(r'(?i)\n\s*Q(?:uestion)?\s*\d+[\s\.\-\:]+', full_text)
         parsed_questions = []
 
-        for block in raw_blocks:
+        for i in range(1, len(parts)):
+            preamble = parts[i-1] 
+            
+            source_match = re.search(r'(?i)exam source\s*[\:\-]?\s*([^\n]+)', preamble)
+            exam_source = source_match.group(1).strip() if source_match else ""
+            
+            topic_match = re.search(r'(?i)chapter\s*[\:\-]?\s*([^\n]+)', preamble)
+            topic = topic_match.group(1).strip() if topic_match else "General History"
+
+            block = parts[i]
+            
             exp_parts = re.split(r'(?i)\n?\s*(?:Detailed\s+)?(?:Explanation|Deep-Dive Rationale):', block)
             content = exp_parts[0]
-            explanation = exp_parts[1].strip().replace('\n', ' ') if len(exp_parts) > 1 else ""
             
-            opt_pattern = r'(?i)(?:^|\s)\(?([A-D])[\)\.]\s+(.*?)(?=(?:^|\s)\(?[A-D][\)\.]\s+|\bCorrect Answer:|$)'
+            if len(exp_parts) > 1:
+                explanation_raw = exp_parts[1]
+                explanation_clean = re.split(r'(?i)\n\s*(?:Chapter|Exam Source)\s*\:', explanation_raw)[0]
+                explanation = explanation_clean.strip().replace('\n', ' ')
+            else:
+                explanation = ""
+            
+            opt_pattern = r'(?i)(?:^|\s)\(?([A-D])[\)\.]\s+(.*?)(?=(?:^|\s)\(?[A-D][\)\.]\s+|\b(?:Correct Answer|Trend Relevance):|$)'
             option_matches = list(re.finditer(opt_pattern, content, re.MULTILINE))[:4]
             
             if option_matches:
                 first_opt_idx = option_matches[0].start()
-                raw_q = content[:first_opt_idx].strip()
-                
-                topic_match = re.search(r'(?i)topic\s*[\:\-]?\s*(.*?)(?=\n|$)', raw_q)
-                topic = topic_match.group(1).strip() if topic_match else "General History"
-                
-                # Extract Exam Source for the UI
-                source_match = re.search(r'(?i)exam source\s*[\:\-]?\s*(.*?)(?=\n|$)', raw_q)
-                exam_source = source_match.group(1).strip() if source_match else ""
-                
-                # Filters out the Topic and Exam Source lines from the main question text
-                clean_q_lines = [line.strip() for line in raw_q.split('\n') if not re.match(r'(?i)^[\-\–\s]*(?:topic|exam source)', line.strip())]
-                question_text = " ".join(clean_q_lines).strip()
+                question_text = content[:first_opt_idx].strip()
                 
                 options = []
                 correct_answer = ""
@@ -297,15 +300,15 @@ if 'logged_in' not in st.session_state:
 if 'current_user' not in st.session_state:
     st.session_state.current_user = None
 
-st.markdown('<div class="main-header">Ancient History Examination Portal</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">Examination Portal</div>', unsafe_allow_html=True)
 
 if not PYPDF_AVAILABLE:
     st.error("🚨 CRITICAL ERROR: pypdf is NOT installed. Ensure requirements.txt is deployed.")
 
-app_mode = st.sidebar.radio("App Mode", ["Student Portal", "Admin & Analysis Dashboard"])
+app_mode = st.sidebar.radio("App Mode", ["Student Portal", "Admin Dashboard"])
 st.sidebar.markdown("---")
 
-if app_mode == "Admin & Analysis Dashboard":
+if app_mode == "Admin Dashboard":
     st.header("📊 Admin Dashboard")
     st.write("Overview of student performance and scores.")
     
@@ -406,7 +409,6 @@ elif app_mode == "Student Portal":
             
         test_phase = st.radio("Select Test Module:", ["Basic Test", "Advanced Test"], horizontal=True)
 
-        # ----------------- BASIC TEST LOGIC -----------------
         if test_phase == "Basic Test":
             questions, source_name = get_student_questions(current_user, "basic")
             st.header(f"📘 Basic Test Phase")
@@ -422,9 +424,9 @@ elif app_mode == "Student Portal":
                     
                     st.markdown(f"<strong style='color:#334155; font-size:16px;'>Q{i+1}: {q_data['q']}</strong>", unsafe_allow_html=True)
                     
-                    # Display Exam Source in Review if available
+                    # Display just the source data without the words "Exam Source"
                     if q_data.get('source'):
-                        st.markdown(f"<div style='color:#64748b; font-size:12px; font-weight:600; margin-top:4px;'>Exam Source: {q_data['source']}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='color:#64748b; font-size:12px; font-weight:600; margin-top:4px;'>{q_data['source']}</div>", unsafe_allow_html=True)
                         
                     if user_ans == correct_ans:
                         st.markdown(f"<p style='color:#10b981; font-weight:600; margin-top:10px;'>Your Answer: {user_ans} (Correct) ✔️</p>", unsafe_allow_html=True)
@@ -504,9 +506,9 @@ elif app_mode == "Student Portal":
                             st.markdown('<div class="question-box">', unsafe_allow_html=True)
                             st.markdown(f'<div class="q-number-badge">Question {idx + 1} of {len(questions)}</div>', unsafe_allow_html=True)
                             
-                            # Display Exam Source during testing if available
+                            # Display just the source data without the words "Exam Source"
                             if q_data.get('source'):
-                                st.markdown(f"<div style='color:#64748b; font-size:13px; font-weight:700; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px;'>📌 Exam Source: {q_data['source']}</div>", unsafe_allow_html=True)
+                                st.markdown(f"<div style='color:#64748b; font-size:13px; font-weight:700; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px;'>📌 {q_data['source']}</div>", unsafe_allow_html=True)
                                 
                             st.markdown(f"<h4 style='color:#1e293b; margin-bottom: 25px; line-height: 1.5;'>{q_data['q']}</h4>", unsafe_allow_html=True)
                             
@@ -555,7 +557,6 @@ elif app_mode == "Student Portal":
                                 st.success("Test Graded successfully! Click below to view your results.")
                                 st.rerun()
 
-        # ----------------- ADVANCED TEST LOGIC -----------------
         elif test_phase == "Advanced Test":
             st.header("📙 Advanced Test Phase")
             

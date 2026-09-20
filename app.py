@@ -128,27 +128,38 @@ components.html(
     height=0, width=0
 )
 
-# User Credentials
+# User & Admin Credentials
 CREDENTIALS = {
     "Rajat": "Rajat4",
     "Manab": "Manab6",
     "Subho": "Subho1"
 }
+ADMIN_PASSWORD = "Admin123"
 
-# File Mappings
+# ----------------- FILE MAPPINGS -----------------
 PDF_MAPPING_BASIC = {
-    "Rajat": ["Basic wednesday test.pdf"],
-    "Manab": ["Basic wednesday test.pdf"],
-    "Subho": ["Basic wednesday test.pdf"]
+    "Rajat": ["Basic Sunday Test.pdf"],
+    "Manab": ["Basic Sunday Test.pdf"],
+    "Subho": ["Basic Sunday Test.pdf"]
 }
 
-PDF_MAPPING_ADVANCED = {
-    "Rajat": ["Advance wednesday test.pdf"],
-    "Manab": ["Advance wednesday test.pdf"],
-    "Subho": ["Advance wednesday test.pdf"]
+PDF_MAPPING_ADV_HIST = {
+    "Rajat": ["Advance History Sunday Test.pdf"],
+    "Manab": ["Advance History Sunday Test.pdf"],
+    "Subho": ["Advance History Sunday Test.pdf"]
 }
 
-# ----------------- PDF PARSER FUNCTION -----------------
+PDF_MAPPING_ADV_GEO = {
+    "Rajat": ["Advance Geography Sunday Test.pdf"],
+    "Manab": ["Advance Geography Sunday Test.pdf"],
+    "Subho": ["Advance Geography Sunday Test.pdf"]
+}
+
+# ----------------- BULLETPROOF PDF PARSER -----------------
+def clean_pdf_text(text):
+    """Strips invisible PDF artifacts, unprintable characters, and private-use unicode blocks (which render as square boxes)"""
+    return re.sub(r'[\ue000-\uf8ff\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ufffd]', '', text).strip()
+
 @st.cache_data
 def extract_questions_from_pdf(filepath):
     if not PYPDF_AVAILABLE or not os.path.exists(filepath):
@@ -157,46 +168,50 @@ def extract_questions_from_pdf(filepath):
         reader = PdfReader(filepath)
         full_text = "\n" + "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
         
-        parts = re.split(r'(?i)\n\s*Q(?:uestion)?\s*\d+[\s\.\-\:]+', full_text)
+        parts = re.split(r'(?i)(?:^|\n|\s+)Q(?:uestion)?\s*\d+[\s\.\-\:]+', full_text)
         parsed_questions = []
 
         for i in range(1, len(parts)):
-            preamble = parts[i-1] 
-            
-            source_match = re.search(r'(?i)exam source\s*[\:\-]?\s*([^\n]+)', preamble)
-            exam_source = source_match.group(1).strip() if source_match else ""
-            
-            topic_match = re.search(r'(?i)chapter\s*[\:\-]?\s*([^\n]+)', preamble)
-            topic = topic_match.group(1).strip() if topic_match else "General History"
-
             block = parts[i]
             
-            exp_parts = re.split(r'(?i)\n?\s*(?:Detailed\s+)?(?:Explanation|Deep-Dive Rationale):', block)
-            content = exp_parts[0]
+            source_match = re.search(r'(?i)exam (?:history \& )?source\s*[\:\-]?\s*([^\n]+)', block)
+            exam_source = clean_pdf_text(source_match.group(1)) if source_match else ""
+            
+            exp_parts = re.split(r'(?i)\n?\s*(?:Detailed\s+)?(?:Explanation|Deep-Dive Rationale)\s*[\:\-]', block)
+            main_body = exp_parts[0]
             
             if len(exp_parts) > 1:
-                explanation_raw = exp_parts[1]
-                explanation_clean = re.split(r'(?i)\n\s*(?:Chapter|Exam Source)\s*\:', explanation_raw)[0]
-                explanation = explanation_clean.strip().replace('\n', ' ')
+                explanation_clean = re.split(r'(?i)\n\s*(?:Chapter|Exam (?:History \& )?Source|\d+\.\s+(?:Ancient|Indian|Northern|Peninsular|Islands|The))', exp_parts[1])[0]
+                explanation = clean_pdf_text(explanation_clean.replace('\n', ' '))
             else:
                 explanation = ""
+                
+            ans_parts = re.split(r'(?i)\s*\b(?:Correct\s+)?Answer\s*[\:\-]', main_body)
+            q_and_opts_and_source = ans_parts[0]  
+            answer_text = ans_parts[1] if len(ans_parts) > 1 else ""
             
-            opt_pattern = r'(?i)(?:^|\s)\(?([A-D])[\)\.]\s+(.*?)(?=(?:^|\s)\(?[A-D][\)\.]\s+|\b(?:Correct Answer|Trend Relevance):|$)'
-            option_matches = list(re.finditer(opt_pattern, content, re.MULTILINE))[:4]
+            ans_match = re.search(r'(?i)^\s*[\[\(]?([A-D])[\]\)]?', answer_text)
+            correct_letter = ans_match.group(1).upper() if ans_match else ""
             
-            if option_matches:
+            source_split = re.split(r'(?i)\s*\bExam(?: History \&)? Source\s*[\:\-]', q_and_opts_and_source)
+            q_and_opts = source_split[0]
+            
+            opt_pattern = r'(?i)(?:^|\n|\s+)[\[\(]?([A-D])[\]\)\.](?:\s*)([\s\S]*?)(?=(?:^|\n|\s+)[\[\(]?[A-D][\]\)\.](?:\s*)|\Z)'
+            option_matches = list(re.finditer(opt_pattern, q_and_opts))[-4:]
+            
+            if len(option_matches) >= 2:
                 first_opt_idx = option_matches[0].start()
-                question_text = content[:first_opt_idx].strip()
+                question_text_raw = q_and_opts[:first_opt_idx].strip()
+                
+                clean_q_lines = [line.strip() for line in question_text_raw.split('\n') if not re.match(r'(?i)^[\-\–\s]*(?:topic)', line.strip())]
+                question_text = clean_pdf_text("\n".join(clean_q_lines))
                 
                 options = []
                 correct_answer = ""
-                
-                ans_match = re.search(r'(?i)\bCorrect Answer:\s*\(?([A-D])\)?', content)
-                correct_letter = ans_match.group(1).upper() if ans_match else ""
 
                 for opt in option_matches:
                     opt_letter = opt.group(1).upper()
-                    opt_text = opt.group(2).strip().replace('\n', ' ')
+                    opt_text = clean_pdf_text(opt.group(2).replace('\n', ' '))
                     clean_opt = re.sub(r'(?i)\(\s*correct\s*\)', '', opt_text).strip()
                     options.append(clean_opt)
                     
@@ -212,7 +227,7 @@ def extract_questions_from_pdf(filepath):
                         "options": options,
                         "correct": correct_answer,
                         "exp": explanation,
-                        "topic": topic,
+                        "topic": "History/Geography",
                         "source": exam_source
                     })
                     
@@ -220,24 +235,26 @@ def extract_questions_from_pdf(filepath):
     except Exception as e:
         return []
 
-FALLBACK_QUESTIONS = {
-    s: [{"q": "Could not parse Basic PDF.", "options": ["OK"], "correct": "OK", "exp": "", "topic": "Error", "source": ""}] for s in CREDENTIALS.keys()
-}
-FALLBACK_ADV_QUESTIONS = {
-    s: [{"q": "Could not parse Advanced PDF.", "options": ["OK"], "correct": "OK", "exp": "", "topic": "Error", "source": ""}] for s in CREDENTIALS.keys()
+FALLBACK = {
+    s: [{"q": "Could not parse PDF.", "options": ["OK"], "correct": "OK", "exp": "", "topic": "Error", "source": ""}] for s in CREDENTIALS.keys()
 }
 
 def get_student_questions(student_name, phase):
-    mapping = PDF_MAPPING_BASIC if phase == "basic" else PDF_MAPPING_ADVANCED
-    fallback = FALLBACK_QUESTIONS if phase == "basic" else FALLBACK_ADV_QUESTIONS
+    if phase == "basic":
+        mapping = PDF_MAPPING_BASIC
+    elif phase == "adv_hist":
+        mapping = PDF_MAPPING_ADV_HIST
+    else:
+        mapping = PDF_MAPPING_ADV_GEO
+        
     for filename in mapping[student_name]:
         if os.path.exists(filename):
             parsed = extract_questions_from_pdf(filename)
             if len(parsed) > 0: 
                 return parsed, filename
-    return fallback[student_name], "PDF File Missing"
+    return FALLBACK[student_name], "PDF File Missing"
 
-# ----------------- DYNAMIC 6-MIN TIMER FUNCTION -----------------
+# ----------------- DYNAMIC TIMER FUNCTION -----------------
 def render_global_timer(time_left, phase):
     timer_html = f"""
     <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); color: white; padding: 18px 25px; border-radius: 16px; display: flex; align-items: center; justify-content: flex-start; gap: 20px; margin-bottom: 25px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); font-family: sans-serif;">
@@ -281,82 +298,131 @@ def render_global_timer(time_left, phase):
     """
     components.html(timer_html, height=115)
 
-# ----------------- GLOBAL SHARED STATE (Visible to everyone) -----------------
+# ----------------- GLOBAL SHARED STATE -----------------
 @st.cache_resource
 def get_global_data():
     return {
         "marks": {"Rajat": 0, "Manab": 0, "Subho": 0},
-        "adv_marks": {"Rajat": 0, "Manab": 0, "Subho": 0},
+        "adv_hist_marks": {"Rajat": 0, "Manab": 0, "Subho": 0},
+        "adv_geo_marks": {"Rajat": 0, "Manab": 0, "Subho": 0},
         "completed_basic": {"Rajat": False, "Manab": False, "Subho": False},
-        "completed_adv": {"Rajat": False, "Manab": False, "Subho": False},
-        "mistakes": {"Rajat": [], "Manab": [], "Subho": []}
+        "completed_adv_hist": {"Rajat": False, "Manab": False, "Subho": False},
+        "completed_adv_geo": {"Rajat": False, "Manab": False, "Subho": False},
+        "mistakes": {"Rajat": [], "Manab": [], "Subho": []},
+        "submitted_answers": {
+            "basic": {"Rajat": {}, "Manab": {}, "Subho": {}},
+            "adv_hist": {"Rajat": {}, "Manab": {}, "Subho": {}},
+            "adv_geo": {"Rajat": {}, "Manab": {}, "Subho": {}}
+        }
     }
 
 global_data = get_global_data()
 
-# ----------------- LOCAL USER STATE (Only visible to current browser) -----------------
+def submit_test(phase_id, current_user, questions, test_phase, score_key, completion_key):
+    """Centralized test grading and saving logic"""
+    score = 0
+    saved_answers = {}
+    
+    for i, q_data_ in enumerate(questions):
+        user_ans = st.session_state[f"{phase_id}_ans_{current_user}"].get(i)
+        if user_ans is None:
+            user_ans = "TIMEOUT"
+            
+        saved_answers[i] = user_ans
+        if user_ans == q_data_['correct']:
+            score += 1
+        else:
+            global_data["mistakes"][current_user].append({
+                "phase": test_phase,
+                "topic": q_data_.get('topic', 'General History'),
+                "q": q_data_['q']
+            })
+            
+    global_data[score_key][current_user] = score
+    global_data["submitted_answers"][phase_id][current_user] = saved_answers
+    global_data[completion_key][current_user] = True
+
+# ----------------- LOCAL USER STATE -----------------
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 if 'current_user' not in st.session_state:
     st.session_state.current_user = None
 
-st.markdown('<div class="main-header">Examination Portal</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">History Examination Portal</div>', unsafe_allow_html=True)
 
 if not PYPDF_AVAILABLE:
-    st.error("🚨 CRITICAL ERROR: pypdf is NOT installed. Ensure requirements.txt is deployed.")
+    st.error("🚨 CRITICAL ERROR: pypdf is NOT installed.")
 
 app_mode = st.sidebar.radio("App Mode", ["Student Portal", "Admin Dashboard"])
 st.sidebar.markdown("---")
 
+# ==================== ADMIN DASHBOARD ====================
 if app_mode == "Admin Dashboard":
     st.header("📊 Admin Dashboard")
     st.write("Overview of student performance and scores.")
     
-    with st.expander("⚠️ Danger Zone: Reset System"):
-        st.warning("This will permanently delete all student scores, mistakes, and test progress.")
-        if st.button("Reset All Data"):
-            global_data["marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0}
-            global_data["adv_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0}
-            global_data["completed_basic"] = {"Rajat": False, "Manab": False, "Subho": False}
-            global_data["completed_adv"] = {"Rajat": False, "Manab": False, "Subho": False}
-            global_data["mistakes"] = {"Rajat": [], "Manab": [], "Subho": []}
-            
-            st.cache_resource.clear()
-            
-            keys_to_keep = ['logged_in', 'current_user']
-            for key in list(st.session_state.keys()):
-                if key not in keys_to_keep:
-                    del st.session_state[key]
-                    
-            st.success("All data has been wiped. Starting fresh!")
-            time.sleep(1) 
-            st.rerun()
+    st.markdown("---")
+    st.subheader("System Administration")
+    admin_auth = st.text_input("Enter Admin Password to unlock Danger Zone:", type="password")
+    
+    if admin_auth == ADMIN_PASSWORD:
+        with st.expander("⚠️ Danger Zone: Reset System"):
+            st.warning("This will permanently delete all student scores, mistakes, and test progress.")
+            if st.button("Reset All Data"):
+                global_data["marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0}
+                global_data["adv_hist_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0}
+                global_data["adv_geo_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0}
+                global_data["completed_basic"] = {"Rajat": False, "Manab": False, "Subho": False}
+                global_data["completed_adv_hist"] = {"Rajat": False, "Manab": False, "Subho": False}
+                global_data["completed_adv_geo"] = {"Rajat": False, "Manab": False, "Subho": False}
+                global_data["mistakes"] = {"Rajat": [], "Manab": [], "Subho": []}
+                global_data["submitted_answers"] = {
+                    "basic": {"Rajat": {}, "Manab": {}, "Subho": {}},
+                    "adv_hist": {"Rajat": {}, "Manab": {}, "Subho": {}},
+                    "adv_geo": {"Rajat": {}, "Manab": {}, "Subho": {}}
+                }
+                
+                st.cache_resource.clear()
+                keys_to_keep = ['logged_in', 'current_user']
+                for key in list(st.session_state.keys()):
+                    if key not in keys_to_keep:
+                        del st.session_state[key]
+                st.success("All data has been wiped. Starting fresh!")
+                time.sleep(1) 
+                st.rerun()
+    elif admin_auth:
+        st.error("Incorrect Admin Password.")
 
     students = ["Rajat", "Manab", "Subho"]
-    
     if st.button("🔄 Refresh Live Scores"):
         st.rerun()
     
     st.subheader("Global Scoreboard")
-    cols = st.columns(5)
+    cols = st.columns(6)
     cols[0].write("**Student**")
-    cols[1].write("**Basic Score**")
-    cols[2].write("**Advanced Score**")
-    cols[3].write("**Total Correct**")
-    cols[4].write("**Total Wrong**")
+    cols[1].write("**Basic**")
+    cols[2].write("**Adv History**")
+    cols[3].write("**Adv Geo**")
+    cols[4].write("**Correct**")
+    cols[5].write("**Wrong**")
     
     for s in students:
         b_score = global_data["marks"][s] if global_data["completed_basic"][s] else 0
-        a_score = global_data["adv_marks"][s] if global_data["completed_adv"][s] else "Pending"
-        t_score = b_score + (global_data["adv_marks"][s] if global_data["completed_adv"][s] else 0)
+        ah_score = global_data["adv_hist_marks"][s] if global_data["completed_adv_hist"][s] else "Pending"
+        ag_score = global_data["adv_geo_marks"][s] if global_data["completed_adv_geo"][s] else "Pending"
+        
+        t_correct = b_score + (ah_score if isinstance(ah_score, int) else 0) + (ag_score if isinstance(ag_score, int) else 0)
         t_wrong = len(global_data["mistakes"][s])
         
         cols[0].write(f"**{s}**")
         cols[1].write(str(b_score) if global_data["completed_basic"][s] else "Pending")
-        cols[2].write(str(a_score))
-        cols[3].write(str(t_score))
-        cols[4].write(str(t_wrong))
+        cols[2].write(str(ah_score))
+        cols[3].write(str(ag_score))
+        cols[4].write(str(t_correct))
+        cols[5].write(str(t_wrong))
 
+
+# ==================== STUDENT PORTAL ====================
 elif app_mode == "Student Portal":
     if not st.session_state.logged_in:
         st.markdown('<div class="login-box">', unsafe_allow_html=True)
@@ -377,9 +443,11 @@ elif app_mode == "Student Portal":
     else:
         current_user = st.session_state.current_user
         
+        # Sidebar Updates
         st.sidebar.header(f"👋 Welcome, {current_user}")
-        st.sidebar.write(f"**Basic Score:** {global_data['marks'][current_user]}")
-        st.sidebar.write(f"**Advanced Score:** {global_data['adv_marks'][current_user] if global_data['completed_adv'][current_user] else 'Pending'}")
+        st.sidebar.write(f"**Basic Score:** {global_data['marks'][current_user] if global_data['completed_basic'][current_user] else 'Pending'}")
+        st.sidebar.write(f"**Adv History Score:** {global_data['adv_hist_marks'][current_user] if global_data['completed_adv_hist'][current_user] else 'Pending'}")
+        st.sidebar.write(f"**Adv Geo Score:** {global_data['adv_geo_marks'][current_user] if global_data['completed_adv_geo'][current_user] else 'Pending'}")
         st.sidebar.markdown("---")
         
         if st.sidebar.button("Logout"):
@@ -387,10 +455,13 @@ elif app_mode == "Student Portal":
             st.session_state.current_user = None
             st.rerun()
             
-        if global_data["completed_basic"][current_user] or global_data["completed_adv"][current_user]:
-            b_score_display = global_data["marks"][current_user] if global_data["completed_basic"][current_user] else 0
-            a_score_display = global_data["adv_marks"][current_user] if global_data["completed_adv"][current_user] else 0
-            total_correct = b_score_display + a_score_display
+        # ----------------- CONDITIONAL STUDENT DASHBOARD OVERVIEW -----------------
+        if global_data["completed_basic"][current_user] or global_data["completed_adv_hist"][current_user] or global_data["completed_adv_geo"][current_user]:
+            b_score = global_data["marks"][current_user] if global_data["completed_basic"][current_user] else 0
+            ah_score = global_data["adv_hist_marks"][current_user] if global_data["completed_adv_hist"][current_user] else 0
+            ag_score = global_data["adv_geo_marks"][current_user] if global_data["completed_adv_geo"][current_user] else 0
+            
+            total_correct = b_score + ah_score + ag_score
             total_wrong = len(global_data["mistakes"][current_user])
             
             st.markdown(f"<h3 style='color:#1e293b; margin-bottom: 20px;'>Dashboard Overview</h3>", unsafe_allow_html=True)
@@ -407,293 +478,129 @@ elif app_mode == "Student Portal":
                 </div>
             """, unsafe_allow_html=True)
             
-        test_phase = st.radio("Select Test Module:", ["Basic Test", "Advanced Test"], horizontal=True)
+        test_phase = st.radio("Select Test Module:", ["Basic Test", "Advance History Test", "Advance Geography Test"], horizontal=True)
 
-        if test_phase == "Basic Test":
-            questions, source_name = get_student_questions(current_user, "basic")
-            st.header(f"📘 Basic Test Phase")
+        # Phase mappings: (id, header, score_dict, completion_dict, time_limit_in_seconds)
+        phase_keys = {
+            "Basic Test": ("basic", "📘 Basic Test Phase", "marks", "completed_basic", 360),
+            "Advance History Test": ("adv_hist", "📙 Advance History Test Phase", "adv_hist_marks", "completed_adv_hist", 180),
+            "Advance Geography Test": ("adv_geo", "🌍 Advance Geography Test Phase", "adv_geo_marks", "completed_adv_geo", 360),
+        }
+        
+        phase_id, header_title, score_key, completion_key, test_duration = phase_keys[test_phase]
+        
+        questions, source_name = get_student_questions(current_user, phase_id)
+        st.header(header_title)
+        
+        if phase_id in ["adv_hist", "adv_geo"] and not global_data["completed_basic"][current_user]:
+            st.warning("⚠️ You must complete your assigned Basic Test before accessing the Advanced modules.")
+        
+        elif global_data[completion_key][current_user]:
+            st.success("You have successfully submitted this test. Review your summary below.")
             
-            if global_data["completed_basic"][current_user]:
-                st.success("You have successfully submitted this test. Review your summary below.")
+            st.markdown('<div class="analysis-card">', unsafe_allow_html=True)
+            st.subheader("Detailed Test Review")
+            for i, q_data in enumerate(questions):
                 
-                st.markdown('<div class="analysis-card">', unsafe_allow_html=True)
-                st.subheader("Detailed Test Review")
-                for i, q_data in enumerate(questions):
-                    user_ans = st.session_state.get(f"basic_ans_{current_user}", {}).get(i, "TIMEOUT")
-                    correct_ans = q_data['correct']
+                # Retrieve submitted answers directly from the persistent global dictionary
+                user_ans = global_data["submitted_answers"][phase_id][current_user].get(i, "TIMEOUT")
+                correct_ans = q_data['correct']
+                
+                # pre-wrap ensures internal lists in Q1 format correctly
+                st.markdown(f"<div style='color:#334155; font-size:16px; font-weight: bold; white-space: pre-wrap;'>Q{i+1}: {q_data['q']}</div>", unsafe_allow_html=True)
+                
+                # Only show Exam Source for Basic Phase
+                if phase_id == "basic" and q_data.get('source'):
+                    st.markdown(f"<div style='color:#64748b; font-size:12px; font-weight:600; margin-top:4px;'>📌 {q_data['source']}</div>", unsafe_allow_html=True)
                     
-                    st.markdown(f"<strong style='color:#334155; font-size:16px;'>Q{i+1}: {q_data['q']}</strong>", unsafe_allow_html=True)
+                if user_ans == correct_ans:
+                    st.markdown(f"<p style='color:#10b981; font-weight:600; margin-top:10px;'>Your Answer: {user_ans} (Correct) ✔️</p>", unsafe_allow_html=True)
+                elif user_ans == "TIMEOUT":
+                    st.markdown(f"<p style='color:#f59e0b; font-weight:600; margin-top:10px;'>Time Expired / No Answer ⏱️</p>", unsafe_allow_html=True)
+                    st.markdown(f"<p style='color:#10b981; font-weight:600;'>Correct Answer: {correct_ans}</p>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<p style='color:#ef4444; font-weight:600; margin-top:10px;'>Your Answer: {user_ans} (Wrong) ❌</p>", unsafe_allow_html=True)
+                    st.markdown(f"<p style='color:#10b981; font-weight:600;'>Correct Answer: {correct_ans}</p>", unsafe_allow_html=True)
                     
-                    # Display just the source data without the words "Exam Source"
-                    if q_data.get('source'):
-                        st.markdown(f"<div style='color:#64748b; font-size:12px; font-weight:600; margin-top:4px;'>{q_data['source']}</div>", unsafe_allow_html=True)
-                        
-                    if user_ans == correct_ans:
-                        st.markdown(f"<p style='color:#10b981; font-weight:600; margin-top:10px;'>Your Answer: {user_ans} (Correct) ✔️</p>", unsafe_allow_html=True)
-                    elif user_ans == "TIMEOUT":
-                        st.markdown(f"<p style='color:#f59e0b; font-weight:600; margin-top:10px;'>Time Expired / No Answer ⏱️</p>", unsafe_allow_html=True)
-                        st.markdown(f"<p style='color:#10b981; font-weight:600;'>Correct Answer: {correct_ans}</p>", unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"<p style='color:#ef4444; font-weight:600; margin-top:10px;'>Your Answer: {user_ans} (Wrong) ❌</p>", unsafe_allow_html=True)
-                        st.markdown(f"<p style='color:#10b981; font-weight:600;'>Correct Answer: {correct_ans}</p>", unsafe_allow_html=True)
-                        
-                    if q_data.get('exp'):
-                        st.info(f"**Explanation:** {q_data['exp']}")
-                    st.write("---")
-                st.markdown('</div>', unsafe_allow_html=True)
+                if q_data.get('exp'):
+                    st.info(f"**Explanation:** {q_data['exp']}")
+                st.write("---")
+            st.markdown('</div>', unsafe_allow_html=True)
 
-            else:
-                if f"basic_idx_{current_user}" not in st.session_state:
-                    st.session_state[f"basic_idx_{current_user}"] = 0
-                    st.session_state[f"basic_ans_{current_user}"] = {}
+        else:
+            if f"{phase_id}_idx_{current_user}" not in st.session_state:
+                st.session_state[f"{phase_id}_idx_{current_user}"] = 0
+                st.session_state[f"{phase_id}_ans_{current_user}"] = {}
+            
+            idx = st.session_state[f"{phase_id}_idx_{current_user}"]
+            
+            if idx < len(questions):
+                q_data = questions[idx]
                 
-                idx = st.session_state[f"basic_idx_{current_user}"]
+                if f"{phase_id}_start_time_{current_user}" not in st.session_state:
+                    st.session_state[f"{phase_id}_start_time_{current_user}"] = time.time()
                 
-                if idx < len(questions):
-                    q_data = questions[idx]
+                elapsed = int(time.time() - st.session_state[f"{phase_id}_start_time_{current_user}"])
+                time_left = max(0, test_duration - elapsed)
+                
+                if st.button("ForceAutoSubmit", key=f"auto_submit_{phase_id}"):
+                    submit_test(phase_id, current_user, questions, test_phase, score_key, completion_key)
+                    st.rerun()
                     
-                    if f"basic_start_time_{current_user}" not in st.session_state:
-                        st.session_state[f"basic_start_time_{current_user}"] = time.time()
+                st.markdown(f"""<style>div:has(button[key="auto_submit_{phase_id}"]) {{ display: none; }}</style>""", unsafe_allow_html=True)
+                
+                if time_left <= 0:
+                    st.warning("Time is up! Auto-submitting...")
+                    time.sleep(2)
+                    submit_test(phase_id, current_user, questions, test_phase, score_key, completion_key)
+                    st.rerun()
+                else:
+                    render_global_timer(time_left, phase_id)
                     
-                    elapsed = int(time.time() - st.session_state[f"basic_start_time_{current_user}"])
-                    time_left = max(0, 360 - elapsed)
-                    
-                    if st.button("ForceAutoSubmit", key="auto_submit_basic"):
-                        score = 0
-                        for i, q_data_ in enumerate(questions):
-                            user_ans = st.session_state[f"basic_ans_{current_user}"].get(i, "TIMEOUT")
-                            if user_ans == q_data_['correct']:
-                                score += 1
-                            else:
-                                global_data["mistakes"][current_user].append({
-                                    "phase": "Basic Test",
-                                    "topic": q_data_.get('topic', 'General History'),
-                                    "q": q_data_['q']
-                                })
-                        global_data["marks"][current_user] = score
-                        global_data["completed_basic"][current_user] = True
-                        st.rerun()
-                        
-                    st.markdown("""<style>div:has(button[key="auto_submit_basic"]) { display: none; }</style>""", unsafe_allow_html=True)
-                    
-                    if time_left <= 0:
-                        st.warning("Time is up! Auto-submitting...")
-                        time.sleep(2)
-                        score = 0
-                        for i, q_data_ in enumerate(questions):
-                            user_ans = st.session_state[f"basic_ans_{current_user}"].get(i, "TIMEOUT")
-                            if user_ans == q_data_['correct']:
-                                score += 1
-                            else:
-                                global_data["mistakes"][current_user].append({
-                                    "phase": "Basic Test",
-                                    "topic": q_data_.get('topic', 'General History'),
-                                    "q": q_data_['q']
-                                })
-                        global_data["marks"][current_user] = score
-                        global_data["completed_basic"][current_user] = True
-                        st.rerun()
-                    else:
-                        render_global_timer(time_left, "basic")
-                        
-                        with st.form(key=f"basic_form_{idx}"):
-                            saved_ans = st.session_state[f"basic_ans_{current_user}"].get(idx)
-                            try:
-                                default_idx = q_data['options'].index(saved_ans)
-                            except (ValueError, TypeError):
-                                default_idx = None
+                    with st.form(key=f"{phase_id}_form_{idx}"):
+                        saved_ans = st.session_state[f"{phase_id}_ans_{current_user}"].get(idx)
+                        try:
+                            default_idx = q_data['options'].index(saved_ans)
+                        except (ValueError, TypeError):
+                            default_idx = None
 
-                            st.markdown('<div class="question-box">', unsafe_allow_html=True)
-                            st.markdown(f'<div class="q-number-badge">Question {idx + 1} of {len(questions)}</div>', unsafe_allow_html=True)
+                        st.markdown('<div class="question-box">', unsafe_allow_html=True)
+                        st.markdown(f'<div class="q-number-badge">Question {idx + 1} of {len(questions)}</div>', unsafe_allow_html=True)
+                        
+                        if phase_id == "basic" and q_data.get('source'):
+                            st.markdown(f"<div style='color:#64748b; font-size:13px; font-weight:700; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px;'>📌 {q_data['source']}</div>", unsafe_allow_html=True)
                             
-                            # Display just the source data without the words "Exam Source"
-                            if q_data.get('source'):
-                                st.markdown(f"<div style='color:#64748b; font-size:13px; font-weight:700; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px;'>📌 {q_data['source']}</div>", unsafe_allow_html=True)
+                        # pre-wrap maintains the alignment of lists inside Q1 
+                        st.markdown(f"<div style='color:#1e293b; margin-bottom: 25px; line-height: 1.5; font-size: 1.1rem; font-weight: 600; white-space: pre-wrap;'>{q_data['q']}</div>", unsafe_allow_html=True)
+                        
+                        ans = st.radio("Select Answer:", q_data['options'], index=default_idx, key=f"{phase_id}_ans_{idx}", label_visibility="collapsed")
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        col1, col2, col3 = st.columns([1, 1, 1])
+                        with col1:
+                            prev_btn = st.form_submit_button("← Previous") if idx > 0 else False
+                        with col3:
+                            if idx < len(questions) - 1:
+                                next_btn = st.form_submit_button("Save & Next →")
+                                submit_btn = False
+                            else:
+                                next_btn = False
+                                submit_btn = st.form_submit_button("Save & Submit Test 🚀")
                                 
-                            st.markdown(f"<h4 style='color:#1e293b; margin-bottom: 25px; line-height: 1.5;'>{q_data['q']}</h4>", unsafe_allow_html=True)
-                            
-                            ans = st.radio("Select Answer:", q_data['options'], index=default_idx, key=f"b_ans_{idx}", label_visibility="collapsed")
-                            st.markdown('</div>', unsafe_allow_html=True)
-                            
-                            col1, col2, col3 = st.columns([1, 1, 1])
-                            with col1:
-                                prev_btn = st.form_submit_button("← Previous") if idx > 0 else False
-                            with col3:
-                                if idx < len(questions) - 1:
-                                    next_btn = st.form_submit_button("Save & Next →")
-                                    submit_btn = False
-                                else:
-                                    next_btn = False
-                                    submit_btn = st.form_submit_button("Save & Submit Test 🚀")
-                                    
-                            if prev_btn:
-                                if ans is not None:
-                                    st.session_state[f"basic_ans_{current_user}"][idx] = ans
-                                st.session_state[f"basic_idx_{current_user}"] -= 1
-                                st.rerun()
-                            if next_btn:
-                                if ans is not None:
-                                    st.session_state[f"basic_ans_{current_user}"][idx] = ans
-                                st.session_state[f"basic_idx_{current_user}"] += 1
-                                st.rerun()
-                            if submit_btn:
-                                if ans is not None:
-                                    st.session_state[f"basic_ans_{current_user}"][idx] = ans
-                                    
-                                score = 0
-                                for i, q_data_ in enumerate(questions):
-                                    user_ans = st.session_state[f"basic_ans_{current_user}"].get(i, "TIMEOUT")
-                                    if user_ans == q_data_['correct']:
-                                        score += 1
-                                    else:
-                                        global_data["mistakes"][current_user].append({
-                                            "phase": "Basic Test",
-                                            "topic": q_data_.get('topic', 'General History'),
-                                            "q": q_data_['q']
-                                        })
-                                        
-                                global_data["marks"][current_user] = score
-                                global_data["completed_basic"][current_user] = True
-                                st.success("Test Graded successfully! Click below to view your results.")
-                                st.rerun()
-
-        elif test_phase == "Advanced Test":
-            st.header("📙 Advanced Test Phase")
-            
-            if not global_data["completed_basic"][current_user]:
-                st.warning("⚠️ You must complete your assigned Basic Test before accessing the Advanced Test.")
-            elif global_data["completed_adv"][current_user]:
-                st.success("You have successfully submitted this test. Review your summary below.")
-                
-                adv_questions, source_name = get_student_questions(current_user, "advanced")
-                st.markdown('<div class="analysis-card">', unsafe_allow_html=True)
-                st.subheader("Detailed Test Review")
-                for i, q_data in enumerate(adv_questions):
-                    user_ans = st.session_state.get(f"adv_ans_{current_user}", {}).get(i, "TIMEOUT")
-                    correct_ans = q_data['correct']
-                    
-                    st.markdown(f"<strong style='color:#334155; font-size:16px;'>Q{i+1}: {q_data['q']}</strong>", unsafe_allow_html=True)
-                    if user_ans == correct_ans:
-                        st.markdown(f"<p style='color:#10b981; font-weight:600; margin-top:10px;'>Your Answer: {user_ans} (Correct) ✔️</p>", unsafe_allow_html=True)
-                    elif user_ans == "TIMEOUT":
-                        st.markdown(f"<p style='color:#f59e0b; font-weight:600; margin-top:10px;'>Time Expired / No Answer ⏱️</p>", unsafe_allow_html=True)
-                        st.markdown(f"<p style='color:#10b981; font-weight:600;'>Correct Answer: {correct_ans}</p>", unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"<p style='color:#ef4444; font-weight:600; margin-top:10px;'>Your Answer: {user_ans} (Wrong) ❌</p>", unsafe_allow_html=True)
-                        st.markdown(f"<p style='color:#10b981; font-weight:600;'>Correct Answer: {correct_ans}</p>", unsafe_allow_html=True)
-                        
-                    if q_data.get('exp'):
-                        st.info(f"**Explanation:** {q_data['exp']}")
-                    st.write("---")
-                st.markdown('</div>', unsafe_allow_html=True)
-            else:
-                adv_questions, source_name = get_student_questions(current_user, "advanced")
-                
-                if f"adv_idx_{current_user}" not in st.session_state:
-                    st.session_state[f"adv_idx_{current_user}"] = 0
-                    st.session_state[f"adv_ans_{current_user}"] = {}
-                
-                idx = st.session_state[f"adv_idx_{current_user}"]
-                
-                if idx < len(adv_questions):
-                    q_data = adv_questions[idx]
-                    
-                    if f"adv_start_time_{current_user}" not in st.session_state:
-                        st.session_state[f"adv_start_time_{current_user}"] = time.time()
-                    
-                    elapsed = int(time.time() - st.session_state[f"adv_start_time_{current_user}"])
-                    time_left = max(0, 360 - elapsed)
-                    
-                    if st.button("ForceAutoSubmit", key="auto_submit_adv"):
-                        adv_score = 0
-                        for i, q_data_ in enumerate(adv_questions):
-                            user_ans = st.session_state[f"adv_ans_{current_user}"].get(i, "TIMEOUT")
-                            if user_ans == q_data_['correct']:
-                                adv_score += 1
-                            else:
-                                global_data["mistakes"][current_user].append({
-                                    "phase": "Advanced Test",
-                                    "topic": q_data_.get('topic', 'General History'),
-                                    "q": q_data_['q']
-                                })
-                        global_data["adv_marks"][current_user] = adv_score
-                        global_data["completed_adv"][current_user] = True
-                        st.rerun()
-                        
-                    st.markdown("""<style>div:has(button[key="auto_submit_adv"]) { display: none; }</style>""", unsafe_allow_html=True)
-                    
-                    if time_left <= 0:
-                        st.warning("Time is up! Auto-submitting...")
-                        time.sleep(2)
-                        adv_score = 0
-                        for i, q_data_ in enumerate(adv_questions):
-                            user_ans = st.session_state[f"adv_ans_{current_user}"].get(i, "TIMEOUT")
-                            if user_ans == q_data_['correct']:
-                                adv_score += 1
-                            else:
-                                global_data["mistakes"][current_user].append({
-                                    "phase": "Advanced Test",
-                                    "topic": q_data_.get('topic', 'General History'),
-                                    "q": q_data_['q']
-                                })
-                        global_data["adv_marks"][current_user] = adv_score
-                        global_data["completed_adv"][current_user] = True
-                        st.rerun()
-                    else:
-                        render_global_timer(time_left, "adv")
-                        
-                        with st.form(key=f"adv_form_{idx}"):
-                            saved_ans = st.session_state[f"adv_ans_{current_user}"].get(idx)
-                            try:
-                                default_idx = q_data['options'].index(saved_ans)
-                            except (ValueError, TypeError):
-                                default_idx = None
-
-                            st.markdown('<div class="question-box">', unsafe_allow_html=True)
-                            st.markdown(f'<div class="q-number-badge">Question {idx + 1} of {len(adv_questions)}</div>', unsafe_allow_html=True)
-                            st.markdown(f"<h4 style='color:#1e293b; margin-bottom: 25px; line-height: 1.5;'>{q_data['q']}</h4>", unsafe_allow_html=True)
-                            
-                            ans = st.radio("Select Answer:", q_data['options'], index=default_idx, key=f"a_ans_{idx}", label_visibility="collapsed")
-                            st.markdown('</div>', unsafe_allow_html=True)
-                            
-                            col1, col2, col3 = st.columns([1, 1, 1])
-                            with col1:
-                                prev_btn = st.form_submit_button("← Previous") if idx > 0 else False
-                            with col3:
-                                if idx < len(adv_questions) - 1:
-                                    next_btn = st.form_submit_button("Save & Next →")
-                                    submit_btn = False
-                                else:
-                                    next_btn = False
-                                    submit_btn = st.form_submit_button("Save & Submit Test 🚀")
-                                    
-                            if prev_btn:
-                                if ans is not None:
-                                    st.session_state[f"adv_ans_{current_user}"][idx] = ans
-                                st.session_state[f"adv_idx_{current_user}"] -= 1
-                                st.rerun()
-                            if next_btn:
-                                if ans is not None:
-                                    st.session_state[f"adv_ans_{current_user}"][idx] = ans
-                                st.session_state[f"adv_idx_{current_user}"] += 1
-                                st.rerun()
-                            if submit_btn:
-                                if ans is not None:
-                                    st.session_state[f"adv_ans_{current_user}"][idx] = ans
-                                    
-                                adv_score = 0
-                                for i, q_data_ in enumerate(adv_questions):
-                                    user_ans = st.session_state[f"adv_ans_{current_user}"].get(i, "TIMEOUT")
-                                    if user_ans == q_data_['correct']:
-                                        adv_score += 1
-                                    else:
-                                        global_data["mistakes"][current_user].append({
-                                            "phase": "Advanced Test",
-                                            "topic": q_data_.get('topic', 'General History'),
-                                            "q": q_data_['q']
-                                        })
-                                        
-                                global_data["adv_marks"][current_user] = adv_score
-                                global_data["completed_adv"][current_user] = True
-                                st.success("Advanced Test Graded successfully! Click below to view your results.")
-                                st.rerun()
+                        if prev_btn:
+                            if ans is not None:
+                                st.session_state[f"{phase_id}_ans_{current_user}"][idx] = ans
+                            st.session_state[f"{phase_id}_idx_{current_user}"] -= 1
+                            st.rerun()
+                        if next_btn:
+                            if ans is not None:
+                                st.session_state[f"{phase_id}_ans_{current_user}"][idx] = ans
+                            st.session_state[f"{phase_id}_idx_{current_user}"] += 1
+                            st.rerun()
+                        if submit_btn:
+                            if ans is not None:
+                                st.session_state[f"{phase_id}_ans_{current_user}"][idx] = ans
+                                
+                            submit_test(phase_id, current_user, questions, test_phase, score_key, completion_key)
+                            st.success("Test Graded successfully! Click below to view your results.")
+                            st.rerun()

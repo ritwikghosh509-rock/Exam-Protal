@@ -90,7 +90,7 @@ st.markdown("""
         box-shadow: 0 4px 15px rgba(124, 58, 237, 0.3);
     }
     
-    /* Interactive Radio Buttons (Options) */
+    /* Interactive Radio Buttons (Options) - Updated to Black Text */
     div.stRadio > div[role="radiogroup"] > label {
         background-color: #f8fafc;
         border: 2px solid #e2e8f0;
@@ -99,7 +99,8 @@ st.markdown("""
         margin-bottom: 12px;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         cursor: pointer;
-        color: #334155;
+        color: #000000;
+        font-weight: 500;
     }
     div.stRadio > div[role="radiogroup"] > label:hover {
         border-color: #4F46E5;
@@ -138,26 +139,20 @@ ADMIN_PASSWORD = "Admin123"
 
 # ----------------- FILE MAPPINGS -----------------
 PDF_MAPPING_BASIC = {
-    "Rajat": ["Basic Sunday Test.pdf"],
-    "Manab": ["Basic Sunday Test.pdf"],
-    "Subho": ["Basic Sunday Test.pdf"]
+    "Rajat": ["Basic_Wed.pdf"],
+    "Manab": ["Basic_Wed.pdf"],
+    "Subho": ["Basic_Wed.pdf"]
 }
 
-PDF_MAPPING_ADV_HIST = {
-    "Rajat": ["Advance History Sunday Test.pdf"],
-    "Manab": ["Advance History Sunday Test.pdf"],
-    "Subho": ["Advance History Sunday Test.pdf"]
-}
-
-PDF_MAPPING_ADV_GEO = {
-    "Rajat": ["Advance Geography Sunday Test.pdf"],
-    "Manab": ["Advance Geography Sunday Test.pdf"],
-    "Subho": ["Advance Geography Sunday Test.pdf"]
+PDF_MAPPING_ADVANCED = {
+    "Rajat": ["Advance_Wed.pdf"],
+    "Manab": ["Advance_Wed.pdf"],
+    "Subho": ["Advance_Wed.pdf"]
 }
 
 # ----------------- BULLETPROOF PDF PARSER -----------------
 def clean_pdf_text(text):
-    """Strips invisible PDF artifacts, unprintable characters, and private-use unicode blocks (which render as square boxes)"""
+    """Strips invisible PDF artifacts and phantom square boxes"""
     return re.sub(r'[\ue000-\uf8ff\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ufffd]', '', text).strip()
 
 @st.cache_data
@@ -168,42 +163,58 @@ def extract_questions_from_pdf(filepath):
         reader = PdfReader(filepath)
         full_text = "\n" + "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
         
-        parts = re.split(r'(?i)(?:^|\n|\s+)Q(?:uestion)?\s*\d+[\s\.\-\:]+', full_text)
+        # Split document securely at Q1., Question 1:, etc.
+        parts = re.split(r'(?i)\n\s*(?:Q(?:uestion)?\s*\d+[\s\.\-\:]+)', full_text)
         parsed_questions = []
 
         for i in range(1, len(parts)):
-            block = parts[i]
+            block = parts[i].strip()
+            if not block:
+                continue
             
-            source_match = re.search(r'(?i)exam (?:history \& )?source\s*[\:\-]?\s*([^\n]+)', block)
-            exam_source = clean_pdf_text(source_match.group(1)) if source_match else ""
+            # Physically slice the Question & Options away from the Answer & Explanations
+            ans_parts = re.split(r'(?i)\n\s*(?:Correct\s+)?Answer\s*[\:\-]', block)
+            q_and_opts = ans_parts[0]  
+            answer_and_rest = ans_parts[1] if len(ans_parts) > 1 else ""
             
-            exp_parts = re.split(r'(?i)\n?\s*(?:Detailed\s+)?(?:Explanation|Deep-Dive Rationale)\s*[\:\-]', block)
-            main_body = exp_parts[0]
-            
-            if len(exp_parts) > 1:
-                explanation_clean = re.split(r'(?i)\n\s*(?:Chapter|Exam (?:History \& )?Source|\d+\.\s+(?:Ancient|Indian|Northern|Peninsular|Islands|The))', exp_parts[1])[0]
-                explanation = clean_pdf_text(explanation_clean.replace('\n', ' '))
-            else:
-                explanation = ""
-                
-            ans_parts = re.split(r'(?i)\s*\b(?:Correct\s+)?Answer\s*[\:\-]', main_body)
-            q_and_opts_and_source = ans_parts[0]  
-            answer_text = ans_parts[1] if len(ans_parts) > 1 else ""
-            
-            ans_match = re.search(r'(?i)^\s*[\[\(]?([A-D])[\]\)]?', answer_text)
+            # Parse Answer
+            ans_match = re.search(r'(?i)^\s*[\[\(]?([A-D])[\]\)]?', answer_and_rest)
             correct_letter = ans_match.group(1).upper() if ans_match else ""
             
-            source_split = re.split(r'(?i)\s*\bExam(?: History \&)? Source\s*[\:\-]', q_and_opts_and_source)
-            q_and_opts = source_split[0]
+            # Parse Explanation safely
+            exp_match = re.search(r'(?i)\n\s*(?:Detailed\s+)?Explanation\s*[\:\-]\s*(.*?)(?=\n\s*(?:Exam Source|Official Exam History)|$)', answer_and_rest, re.DOTALL)
+            explanation = clean_pdf_text(exp_match.group(1).replace('\n', ' ')) if exp_match else ""
             
-            opt_pattern = r'(?i)(?:^|\n|\s+)[\[\(]?([A-D])[\]\)\.](?:\s*)([\s\S]*?)(?=(?:^|\n|\s+)[\[\(]?[A-D][\]\)\.](?:\s*)|\Z)'
+            # Extract Options (Searches specifically for the final 4 A/B/C/D markers in the question block)
+            opt_pattern = r'(?i)(?:^|\s)[\[\(]?([A-D])[\]\)\.](?:\s+)([\s\S]*?)(?=(?:^|\s)[\[\(]?[A-D][\]\)\.](?:\s+)|\Z)'
             option_matches = list(re.finditer(opt_pattern, q_and_opts))[-4:]
             
             if len(option_matches) >= 2:
                 first_opt_idx = option_matches[0].start()
                 question_text_raw = q_and_opts[:first_opt_idx].strip()
                 
-                clean_q_lines = [line.strip() for line in question_text_raw.split('\n') if not re.match(r'(?i)^[\-\–\s]*(?:topic)', line.strip())]
+                # Clean up residual headers and chapter titles above the question
+                raw_lines = [line.strip() for line in question_text_raw.split('\n') if line.strip()]
+                clean_q_lines = []
+                for line in raw_lines:
+                    # Filter standard document headers
+                    if re.match(r'(?i)^(?:PART|Target Exam|Syllabus Focus|RRB NTPC).*', line):
+                        continue
+                    clean_q_lines.append(line)
+                
+                # POP THE TITLE LINE AND ANY WORD-WRAPPED TITLE FRAGMENTS
+                if len(clean_q_lines) > 0:
+                    clean_q_lines.pop(0)
+                    
+                    while len(clean_q_lines) > 0:
+                        nxt_line = clean_q_lines[0]
+                        if nxt_line.endswith(')') and '(' not in nxt_line:
+                            clean_q_lines.pop(0)
+                        elif re.match(r'(?i)^(?:shift\-pattern\)?|option\)?)$', nxt_line):
+                            clean_q_lines.pop(0)
+                        else:
+                            break
+                
                 question_text = clean_pdf_text("\n".join(clean_q_lines))
                 
                 options = []
@@ -227,8 +238,7 @@ def extract_questions_from_pdf(filepath):
                         "options": options,
                         "correct": correct_answer,
                         "exp": explanation,
-                        "topic": "History/Geography",
-                        "source": exam_source
+                        "topic": "History/Geography"
                     })
                     
         return parsed_questions
@@ -236,17 +246,11 @@ def extract_questions_from_pdf(filepath):
         return []
 
 FALLBACK = {
-    s: [{"q": "Could not parse PDF.", "options": ["OK"], "correct": "OK", "exp": "", "topic": "Error", "source": ""}] for s in CREDENTIALS.keys()
+    s: [{"q": "Could not parse PDF. Ensure correct formatting.", "options": ["OK"], "correct": "OK", "exp": "", "topic": "Error"}] for s in CREDENTIALS.keys()
 }
 
 def get_student_questions(student_name, phase):
-    if phase == "basic":
-        mapping = PDF_MAPPING_BASIC
-    elif phase == "adv_hist":
-        mapping = PDF_MAPPING_ADV_HIST
-    else:
-        mapping = PDF_MAPPING_ADV_GEO
-        
+    mapping = PDF_MAPPING_BASIC if phase == "basic" else PDF_MAPPING_ADVANCED
     for filename in mapping[student_name]:
         if os.path.exists(filename):
             parsed = extract_questions_from_pdf(filename)
@@ -303,16 +307,13 @@ def render_global_timer(time_left, phase):
 def get_global_data():
     return {
         "marks": {"Rajat": 0, "Manab": 0, "Subho": 0},
-        "adv_hist_marks": {"Rajat": 0, "Manab": 0, "Subho": 0},
-        "adv_geo_marks": {"Rajat": 0, "Manab": 0, "Subho": 0},
+        "adv_marks": {"Rajat": 0, "Manab": 0, "Subho": 0},
         "completed_basic": {"Rajat": False, "Manab": False, "Subho": False},
-        "completed_adv_hist": {"Rajat": False, "Manab": False, "Subho": False},
-        "completed_adv_geo": {"Rajat": False, "Manab": False, "Subho": False},
+        "completed_adv": {"Rajat": False, "Manab": False, "Subho": False},
         "mistakes": {"Rajat": [], "Manab": [], "Subho": []},
         "submitted_answers": {
             "basic": {"Rajat": {}, "Manab": {}, "Subho": {}},
-            "adv_hist": {"Rajat": {}, "Manab": {}, "Subho": {}},
-            "adv_geo": {"Rajat": {}, "Manab": {}, "Subho": {}}
+            "advanced": {"Rajat": {}, "Manab": {}, "Subho": {}}
         }
     }
 
@@ -348,7 +349,7 @@ if 'logged_in' not in st.session_state:
 if 'current_user' not in st.session_state:
     st.session_state.current_user = None
 
-st.markdown('<div class="main-header">History Examination Portal</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">Ancient History Examination Portal</div>', unsafe_allow_html=True)
 
 if not PYPDF_AVAILABLE:
     st.error("🚨 CRITICAL ERROR: pypdf is NOT installed.")
@@ -367,19 +368,36 @@ if app_mode == "Admin Dashboard":
     
     if admin_auth == ADMIN_PASSWORD:
         with st.expander("⚠️ Danger Zone: Reset System"):
-            st.warning("This will permanently delete all student scores, mistakes, and test progress.")
-            if st.button("Reset All Data"):
+            st.warning("You can reset progress for an individual student or wipe the entire system.")
+            
+            # Individual Student Reset Feature
+            st.markdown("##### Target Individual Reset")
+            reset_student = st.selectbox("Select Student to Reset:", ["Rajat", "Manab", "Subho"])
+            if st.button(f"Reset Data for {reset_student} 🗑️"):
+                global_data["marks"][reset_student] = 0
+                global_data["adv_marks"][reset_student] = 0
+                global_data["completed_basic"][reset_student] = False
+                global_data["completed_adv"][reset_student] = False
+                global_data["mistakes"][reset_student] = []
+                global_data["submitted_answers"]["basic"][reset_student] = {}
+                global_data["submitted_answers"]["advanced"][reset_student] = {}
+                st.success(f"Successfully wiped all data and progress for {reset_student}.")
+                time.sleep(1)
+                st.rerun()
+
+            st.markdown("---")
+            
+            # Master Reset Feature
+            st.markdown("##### Master System Reset")
+            if st.button("Reset Entire System 🚨"):
                 global_data["marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0}
-                global_data["adv_hist_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0}
-                global_data["adv_geo_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0}
+                global_data["adv_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0}
                 global_data["completed_basic"] = {"Rajat": False, "Manab": False, "Subho": False}
-                global_data["completed_adv_hist"] = {"Rajat": False, "Manab": False, "Subho": False}
-                global_data["completed_adv_geo"] = {"Rajat": False, "Manab": False, "Subho": False}
+                global_data["completed_adv"] = {"Rajat": False, "Manab": False, "Subho": False}
                 global_data["mistakes"] = {"Rajat": [], "Manab": [], "Subho": []}
                 global_data["submitted_answers"] = {
                     "basic": {"Rajat": {}, "Manab": {}, "Subho": {}},
-                    "adv_hist": {"Rajat": {}, "Manab": {}, "Subho": {}},
-                    "adv_geo": {"Rajat": {}, "Manab": {}, "Subho": {}}
+                    "advanced": {"Rajat": {}, "Manab": {}, "Subho": {}}
                 }
                 
                 st.cache_resource.clear()
@@ -398,28 +416,25 @@ if app_mode == "Admin Dashboard":
         st.rerun()
     
     st.subheader("Global Scoreboard")
-    cols = st.columns(6)
+    cols = st.columns(5)
     cols[0].write("**Student**")
     cols[1].write("**Basic**")
-    cols[2].write("**Adv History**")
-    cols[3].write("**Adv Geo**")
-    cols[4].write("**Correct**")
-    cols[5].write("**Wrong**")
+    cols[2].write("**Advanced**")
+    cols[3].write("**Total Correct**")
+    cols[4].write("**Total Wrong**")
     
     for s in students:
         b_score = global_data["marks"][s] if global_data["completed_basic"][s] else 0
-        ah_score = global_data["adv_hist_marks"][s] if global_data["completed_adv_hist"][s] else "Pending"
-        ag_score = global_data["adv_geo_marks"][s] if global_data["completed_adv_geo"][s] else "Pending"
+        a_score = global_data["adv_marks"][s] if global_data["completed_adv"][s] else "Pending"
         
-        t_correct = b_score + (ah_score if isinstance(ah_score, int) else 0) + (ag_score if isinstance(ag_score, int) else 0)
+        t_correct = b_score + (a_score if isinstance(a_score, int) else 0)
         t_wrong = len(global_data["mistakes"][s])
         
         cols[0].write(f"**{s}**")
         cols[1].write(str(b_score) if global_data["completed_basic"][s] else "Pending")
-        cols[2].write(str(ah_score))
-        cols[3].write(str(ag_score))
-        cols[4].write(str(t_correct))
-        cols[5].write(str(t_wrong))
+        cols[2].write(str(a_score))
+        cols[3].write(str(t_correct))
+        cols[4].write(str(t_wrong))
 
 
 # ==================== STUDENT PORTAL ====================
@@ -446,8 +461,7 @@ elif app_mode == "Student Portal":
         # Sidebar Updates
         st.sidebar.header(f"👋 Welcome, {current_user}")
         st.sidebar.write(f"**Basic Score:** {global_data['marks'][current_user] if global_data['completed_basic'][current_user] else 'Pending'}")
-        st.sidebar.write(f"**Adv History Score:** {global_data['adv_hist_marks'][current_user] if global_data['completed_adv_hist'][current_user] else 'Pending'}")
-        st.sidebar.write(f"**Adv Geo Score:** {global_data['adv_geo_marks'][current_user] if global_data['completed_adv_geo'][current_user] else 'Pending'}")
+        st.sidebar.write(f"**Advanced Score:** {global_data['adv_marks'][current_user] if global_data['completed_adv'][current_user] else 'Pending'}")
         st.sidebar.markdown("---")
         
         if st.sidebar.button("Logout"):
@@ -456,12 +470,11 @@ elif app_mode == "Student Portal":
             st.rerun()
             
         # ----------------- CONDITIONAL STUDENT DASHBOARD OVERVIEW -----------------
-        if global_data["completed_basic"][current_user] or global_data["completed_adv_hist"][current_user] or global_data["completed_adv_geo"][current_user]:
+        if global_data["completed_basic"][current_user] or global_data["completed_adv"][current_user]:
             b_score = global_data["marks"][current_user] if global_data["completed_basic"][current_user] else 0
-            ah_score = global_data["adv_hist_marks"][current_user] if global_data["completed_adv_hist"][current_user] else 0
-            ag_score = global_data["adv_geo_marks"][current_user] if global_data["completed_adv_geo"][current_user] else 0
+            a_score = global_data["adv_marks"][current_user] if global_data["completed_adv"][current_user] else 0
             
-            total_correct = b_score + ah_score + ag_score
+            total_correct = b_score + a_score
             total_wrong = len(global_data["mistakes"][current_user])
             
             st.markdown(f"<h3 style='color:#1e293b; margin-bottom: 20px;'>Dashboard Overview</h3>", unsafe_allow_html=True)
@@ -478,13 +491,11 @@ elif app_mode == "Student Portal":
                 </div>
             """, unsafe_allow_html=True)
             
-        test_phase = st.radio("Select Test Module:", ["Basic Test", "Advance History Test", "Advance Geography Test"], horizontal=True)
+        test_phase = st.radio("Select Test Module:", ["Basic Test", "Advanced Test"], horizontal=True)
 
-        # Phase mappings: (id, header, score_dict, completion_dict, time_limit_in_seconds)
         phase_keys = {
-            "Basic Test": ("basic", "📘 Basic Test Phase", "marks", "completed_basic", 360),
-            "Advance History Test": ("adv_hist", "📙 Advance History Test Phase", "adv_hist_marks", "completed_adv_hist", 180),
-            "Advance Geography Test": ("adv_geo", "🌍 Advance Geography Test Phase", "adv_geo_marks", "completed_adv_geo", 360),
+            "Basic Test": ("basic", "📘 Basic Test Phase", "marks", "completed_basic", 330),
+            "Advanced Test": ("advanced", "📙 Advanced Test Phase", "adv_marks", "completed_adv", 330),
         }
         
         phase_id, header_title, score_key, completion_key, test_duration = phase_keys[test_phase]
@@ -492,7 +503,7 @@ elif app_mode == "Student Portal":
         questions, source_name = get_student_questions(current_user, phase_id)
         st.header(header_title)
         
-        if phase_id in ["adv_hist", "adv_geo"] and not global_data["completed_basic"][current_user]:
+        if phase_id == "advanced" and not global_data["completed_basic"][current_user]:
             st.warning("⚠️ You must complete your assigned Basic Test before accessing the Advanced modules.")
         
         elif global_data[completion_key][current_user]:
@@ -506,13 +517,8 @@ elif app_mode == "Student Portal":
                 user_ans = global_data["submitted_answers"][phase_id][current_user].get(i, "TIMEOUT")
                 correct_ans = q_data['correct']
                 
-                # pre-wrap ensures internal lists in Q1 format correctly
-                st.markdown(f"<div style='color:#334155; font-size:16px; font-weight: bold; white-space: pre-wrap;'>Q{i+1}: {q_data['q']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='color:#000000; font-size:16px; font-weight: bold; white-space: pre-wrap;'>{i+1}. {q_data['q']}</div>", unsafe_allow_html=True)
                 
-                # Only show Exam Source for Basic Phase
-                if phase_id == "basic" and q_data.get('source'):
-                    st.markdown(f"<div style='color:#64748b; font-size:12px; font-weight:600; margin-top:4px;'>📌 {q_data['source']}</div>", unsafe_allow_html=True)
-                    
                 if user_ans == correct_ans:
                     st.markdown(f"<p style='color:#10b981; font-weight:600; margin-top:10px;'>Your Answer: {user_ans} (Correct) ✔️</p>", unsafe_allow_html=True)
                 elif user_ans == "TIMEOUT":
@@ -567,11 +573,7 @@ elif app_mode == "Student Portal":
                         st.markdown('<div class="question-box">', unsafe_allow_html=True)
                         st.markdown(f'<div class="q-number-badge">Question {idx + 1} of {len(questions)}</div>', unsafe_allow_html=True)
                         
-                        if phase_id == "basic" and q_data.get('source'):
-                            st.markdown(f"<div style='color:#64748b; font-size:13px; font-weight:700; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px;'>📌 {q_data['source']}</div>", unsafe_allow_html=True)
-                            
-                        # pre-wrap maintains the alignment of lists inside Q1 
-                        st.markdown(f"<div style='color:#1e293b; margin-bottom: 25px; line-height: 1.5; font-size: 1.1rem; font-weight: 600; white-space: pre-wrap;'>{q_data['q']}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='color:#000000; margin-bottom: 25px; line-height: 1.5; font-size: 1.1rem; font-weight: 600; white-space: pre-wrap;'>{q_data['q']}</div>", unsafe_allow_html=True)
                         
                         ans = st.radio("Select Answer:", q_data['options'], index=default_idx, key=f"{phase_id}_ans_{idx}", label_visibility="collapsed")
                         st.markdown('</div>', unsafe_allow_html=True)
@@ -579,24 +581,39 @@ elif app_mode == "Student Portal":
                         col1, col2, col3 = st.columns([1, 1, 1])
                         with col1:
                             prev_btn = st.form_submit_button("← Previous") if idx > 0 else False
+                            
+                        # Dedicated Save Answer option for the final question
+                        with col2:
+                            if idx == len(questions) - 1:
+                                save_btn = st.form_submit_button("Save Answer 💾")
+                            else:
+                                save_btn = False
+                                
                         with col3:
                             if idx < len(questions) - 1:
                                 next_btn = st.form_submit_button("Save & Next →")
                                 submit_btn = False
                             else:
                                 next_btn = False
-                                submit_btn = st.form_submit_button("Save & Submit Test 🚀")
+                                submit_btn = st.form_submit_button("Submit Test 🚀")
                                 
                         if prev_btn:
                             if ans is not None:
                                 st.session_state[f"{phase_id}_ans_{current_user}"][idx] = ans
                             st.session_state[f"{phase_id}_idx_{current_user}"] -= 1
                             st.rerun()
+                            
+                        if save_btn:
+                            if ans is not None:
+                                st.session_state[f"{phase_id}_ans_{current_user}"][idx] = ans
+                            st.rerun()
+                            
                         if next_btn:
                             if ans is not None:
                                 st.session_state[f"{phase_id}_ans_{current_user}"][idx] = ans
                             st.session_state[f"{phase_id}_idx_{current_user}"] += 1
                             st.rerun()
+                            
                         if submit_btn:
                             if ans is not None:
                                 st.session_state[f"{phase_id}_ans_{current_user}"][idx] = ans

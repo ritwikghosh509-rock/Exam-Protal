@@ -3,7 +3,6 @@ import streamlit.components.v1 as components
 import os
 import re
 import time
-from collections import Counter
 
 # Try importing pypdf for direct PDF reading
 try:
@@ -133,21 +132,24 @@ components.html(
 CREDENTIALS = {
     "Rajat": "Rajat4",
     "Manab": "Manab6",
-    "Subho": "Subho1"
+    "Subho": "Subho1",
+    "Srijani": "Srijani7"
 }
 ADMIN_PASSWORD = "Admin123"
 
 # ----------------- FILE MAPPINGS -----------------
 PDF_MAPPING_BASIC = {
-    "Rajat": ["Basic_Wed.pdf"],
-    "Manab": ["Basic_Wed.pdf"],
-    "Subho": ["Basic_Wed.pdf"]
+    "Rajat": ["Basics.pdf"],
+    "Manab": ["Basics.pdf"],
+    "Subho": ["Basics.pdf"],
+    "Srijani": ["Basics.pdf"]
 }
 
 PDF_MAPPING_ADVANCED = {
-    "Rajat": ["Advance_Wed.pdf"],
-    "Manab": ["Advance_Wed.pdf"],
-    "Subho": ["Advance_Wed.pdf"]
+    "Rajat": ["Advance.pdf"],
+    "Manab": ["Advance.pdf"],
+    "Subho": ["Advance.pdf"],
+    "Srijani": ["Advance.pdf"]
 }
 
 # ----------------- BULLETPROOF PDF PARSER -----------------
@@ -167,13 +169,16 @@ def extract_questions_from_pdf(filepath):
         parts = re.split(r'(?i)\n\s*(?:Q(?:uestion)?\s*\d+[\s\.\-\:]+)', full_text)
         parsed_questions = []
 
+        # Check if we are reading the Advanced PDF to apply heading removal
+        is_advanced = "Advance" in filepath
+
         for i in range(1, len(parts)):
             block = parts[i].strip()
             if not block:
                 continue
             
             # Physically slice the Question & Options away from the Answer & Explanations
-            ans_parts = re.split(r'(?i)\n\s*(?:Correct\s+)?Answer\s*[\:\-]', block)
+            ans_parts = re.split(r'(?im)^[ \t]*(?:Correct\s+)?Answer\s*[\:\-]', block)
             q_and_opts = ans_parts[0]  
             answer_and_rest = ans_parts[1] if len(ans_parts) > 1 else ""
             
@@ -182,29 +187,29 @@ def extract_questions_from_pdf(filepath):
             correct_letter = ans_match.group(1).upper() if ans_match else ""
             
             # Parse Explanation safely
-            exp_match = re.search(r'(?i)\n\s*(?:Detailed\s+)?Explanation\s*[\:\-]\s*(.*?)(?=\n\s*(?:Exam Source|Official Exam History)|$)', answer_and_rest, re.DOTALL)
+            exp_match = re.search(r'(?im)^[ \t]*(?:Detailed\s+)?Explanation\s*[\:\-]\s*(.*?)(?=\n[ \t]*(?:Exam Source|Official Exam History|Verified Source|Exam Repetitions|Exam Sourced|Target Trend|Sourced From)|$)', answer_and_rest, re.DOTALL)
             explanation = clean_pdf_text(exp_match.group(1).replace('\n', ' ')) if exp_match else ""
             
-            # Extract Options (Searches specifically for the final 4 A/B/C/D markers in the question block)
-            opt_pattern = r'(?i)(?:^|\s)[\[\(]?([A-D])[\]\)\.](?:\s+)([\s\S]*?)(?=(?:^|\s)[\[\(]?[A-D][\]\)\.](?:\s+)|\Z)'
+            # Extract Options (Strict Start-Of-Line Matcher to prevent inline option disruption)
+            opt_pattern = r'(?im)^[ \t]*[\[\(]?([A-D])[\]\)\.][ \t]+([\s\S]*?)(?=^[ \t]*[\[\(]?[A-D][\]\)\.][ \t]+|\Z)'
             option_matches = list(re.finditer(opt_pattern, q_and_opts))[-4:]
             
             if len(option_matches) >= 2:
                 first_opt_idx = option_matches[0].start()
                 question_text_raw = q_and_opts[:first_opt_idx].strip()
                 
-                # Clean up residual headers and chapter titles above the question
+                # Clean up residual headers above the question
                 raw_lines = [line.strip() for line in question_text_raw.split('\n') if line.strip()]
                 clean_q_lines = []
                 for line in raw_lines:
-                    # Filter standard document headers
-                    if re.match(r'(?i)^(?:PART|Target Exam|Syllabus Focus|RRB NTPC).*', line):
+                    # Filter standard document headers that are not part of the question
+                    if re.match(r'(?i)^(?:PART|Target Exam|Syllabus Focus|RRB NTPC|Combined Master|Subject:|Pattern Benchmark|SECTION|This is for).*', line):
                         continue
                     clean_q_lines.append(line)
                 
-                # POP THE TITLE LINE AND ANY WORD-WRAPPED TITLE FRAGMENTS
-                if len(clean_q_lines) > 0:
-                    clean_q_lines.pop(0)
+                # If Advanced PDF, pop the title line and any word-wrapped title fragments
+                if is_advanced and len(clean_q_lines) > 0:
+                    clean_q_lines.pop(0) # Remove the main heading
                     
                     while len(clean_q_lines) > 0:
                         nxt_line = clean_q_lines[0]
@@ -306,14 +311,14 @@ def render_global_timer(time_left, phase):
 @st.cache_resource
 def get_global_data():
     return {
-        "marks": {"Rajat": 0, "Manab": 0, "Subho": 0},
-        "adv_marks": {"Rajat": 0, "Manab": 0, "Subho": 0},
-        "completed_basic": {"Rajat": False, "Manab": False, "Subho": False},
-        "completed_adv": {"Rajat": False, "Manab": False, "Subho": False},
-        "mistakes": {"Rajat": [], "Manab": [], "Subho": []},
+        "marks": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
+        "adv_marks": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
+        "completed_basic": {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False},
+        "completed_adv": {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False},
+        "mistakes": {"Rajat": [], "Manab": [], "Subho": [], "Srijani": []},
         "submitted_answers": {
-            "basic": {"Rajat": {}, "Manab": {}, "Subho": {}},
-            "advanced": {"Rajat": {}, "Manab": {}, "Subho": {}}
+            "basic": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}},
+            "advanced": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}}
         }
     }
 
@@ -372,7 +377,7 @@ if app_mode == "Admin Dashboard":
             
             # Individual Student Reset Feature
             st.markdown("##### Target Individual Reset")
-            reset_student = st.selectbox("Select Student to Reset:", ["Rajat", "Manab", "Subho"])
+            reset_student = st.selectbox("Select Student to Reset:", ["Rajat", "Manab", "Subho", "Srijani"])
             if st.button(f"Reset Data for {reset_student} 🗑️"):
                 global_data["marks"][reset_student] = 0
                 global_data["adv_marks"][reset_student] = 0
@@ -390,14 +395,14 @@ if app_mode == "Admin Dashboard":
             # Master Reset Feature
             st.markdown("##### Master System Reset")
             if st.button("Reset Entire System 🚨"):
-                global_data["marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0}
-                global_data["adv_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0}
-                global_data["completed_basic"] = {"Rajat": False, "Manab": False, "Subho": False}
-                global_data["completed_adv"] = {"Rajat": False, "Manab": False, "Subho": False}
-                global_data["mistakes"] = {"Rajat": [], "Manab": [], "Subho": []}
+                global_data["marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0}
+                global_data["adv_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0}
+                global_data["completed_basic"] = {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False}
+                global_data["completed_adv"] = {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False}
+                global_data["mistakes"] = {"Rajat": [], "Manab": [], "Subho": [], "Srijani": []}
                 global_data["submitted_answers"] = {
-                    "basic": {"Rajat": {}, "Manab": {}, "Subho": {}},
-                    "advanced": {"Rajat": {}, "Manab": {}, "Subho": {}}
+                    "basic": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}},
+                    "advanced": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}}
                 }
                 
                 st.cache_resource.clear()
@@ -411,7 +416,7 @@ if app_mode == "Admin Dashboard":
     elif admin_auth:
         st.error("Incorrect Admin Password.")
 
-    students = ["Rajat", "Manab", "Subho"]
+    students = ["Rajat", "Manab", "Subho", "Srijani"]
     if st.button("🔄 Refresh Live Scores"):
         st.rerun()
     
@@ -442,7 +447,7 @@ elif app_mode == "Student Portal":
     if not st.session_state.logged_in:
         st.markdown('<div class="login-box">', unsafe_allow_html=True)
         st.markdown("<h2 style='text-align:center; color:#1e293b; margin-bottom: 25px;'>Student Login</h2>", unsafe_allow_html=True)
-        selected_user = st.selectbox("Select Username", ["Rajat", "Manab", "Subho"])
+        selected_user = st.selectbox("Select Username", ["Rajat", "Manab", "Subho", "Srijani"])
         password = st.text_input("Password", type="password")
         
         st.markdown("<br>", unsafe_allow_html=True)
@@ -494,8 +499,8 @@ elif app_mode == "Student Portal":
         test_phase = st.radio("Select Test Module:", ["Basic Test", "Advanced Test"], horizontal=True)
 
         phase_keys = {
-            "Basic Test": ("basic", "📘 Basic Test Phase", "marks", "completed_basic", 330),
-            "Advanced Test": ("advanced", "📙 Advanced Test Phase", "adv_marks", "completed_adv", 330),
+            "Basic Test": ("basic", "📘 Basic Test Phase", "marks", "completed_basic", 660),
+            "Advanced Test": ("advanced", "📙 Advanced Test Phase", "adv_marks", "completed_adv", 720),
         }
         
         phase_id, header_title, score_key, completion_key, test_duration = phase_keys[test_phase]

@@ -169,6 +169,9 @@ def extract_questions_from_pdf(filepath):
         parts = re.split(r'(?i)\n\s*(?:Q(?:uestion)?\s*\d+[\s\.\-\:]+)', full_text)
         parsed_questions = []
 
+        # Check if we are reading the Advanced PDF to apply heading removal
+        is_advanced = "Advance" in filepath
+
         for i in range(1, len(parts)):
             block = parts[i].strip()
             if not block:
@@ -375,7 +378,7 @@ if app_mode == "Admin Dashboard":
             # Individual Student Reset Feature
             st.markdown("##### Target Individual Reset")
             reset_student = st.selectbox("Select Student to Reset:", ["Rajat", "Manab", "Subho", "Srijani"])
-            if st.button(f"Reset Data for {reset_student} 🗑️"):
+            if st.button(f"Reset Data for {reset_student} 🗑️️"):
                 global_data["marks"][reset_student] = 0
                 global_data["adv_marks"][reset_student] = 0
                 global_data["completed_basic"][reset_student] = False
@@ -528,8 +531,8 @@ elif app_mode == "Student Portal":
         test_phase = st.radio("Select Test Module:", ["Basic Test", "Advanced Test"], horizontal=True)
 
         phase_keys = {
-            "Basic Test": ("basic", "📘 Basic Test Phase", "marks", "completed_basic", 660),
-            "Advanced Test": ("advanced", "📙 Advanced Test Phase", "adv_marks", "completed_adv", 720),
+            "Basic Test": ("basic", "📘 Basic Test Phase", "marks", "completed_basic", 300),
+            "Advanced Test": ("advanced", "📙 Advanced Test Phase", "adv_marks", "completed_adv", 360),
         }
         
         phase_id, header_title, score_key, completion_key, test_duration = phase_keys[test_phase]

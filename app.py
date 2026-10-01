@@ -139,17 +139,17 @@ ADMIN_PASSWORD = "Admin123"
 
 # ----------------- FILE MAPPINGS -----------------
 PDF_MAPPING_BASIC = {
-    "Rajat": ["Basics.pdf"],
-    "Manab": ["Basics.pdf"],
-    "Subho": ["Basics.pdf"],
-    "Srijani": ["Basics.pdf"]
+    "Rajat": ["Basic_10.pdf"],
+    "Manab": ["Basic_10.pdf"],
+    "Subho": ["Basic_10.pdf"],
+    "Srijani": ["Basic_10.pdf"]
 }
 
 PDF_MAPPING_ADVANCED = {
-    "Rajat": ["Advance.pdf"],
-    "Manab": ["Advance.pdf"],
-    "Subho": ["Advance.pdf"],
-    "Srijani": ["Advance.pdf"]
+    "Rajat": ["Advance_10.pdf"],
+    "Manab": ["Advance_10.pdf"],
+    "Subho": ["Advance_10.pdf"],
+    "Srijani": ["Advance_10.pdf"]
 }
 
 # ----------------- BULLETPROOF PDF PARSER -----------------
@@ -169,9 +169,6 @@ def extract_questions_from_pdf(filepath):
         parts = re.split(r'(?i)\n\s*(?:Q(?:uestion)?\s*\d+[\s\.\-\:]+)', full_text)
         parsed_questions = []
 
-        # Check if we are reading the Advanced PDF to apply heading removal
-        is_advanced = "Advance" in filepath
-
         for i in range(1, len(parts)):
             block = parts[i].strip()
             if not block:
@@ -187,7 +184,7 @@ def extract_questions_from_pdf(filepath):
             correct_letter = ans_match.group(1).upper() if ans_match else ""
             
             # Parse Explanation safely
-            exp_match = re.search(r'(?im)^[ \t]*(?:Detailed\s+)?Explanation\s*[\:\-]\s*(.*?)(?=\n[ \t]*(?:Exam Source|Official Exam History|Verified Source|Exam Repetitions|Exam Sourced|Target Trend|Sourced From)|$)', answer_and_rest, re.DOTALL)
+            exp_match = re.search(r'(?im)^[ \t]*(?:Detailed\s+)?Explanation\s*[\:\-]\s*(.*?)(?=\n[ \t]*(?:Exam Source|Official Exam History|Verified Source|Exam Repetitions|Exam Sourced|Target Trend|Sourced From|Strategic Explanation)|$)', answer_and_rest, re.DOTALL)
             explanation = clean_pdf_text(exp_match.group(1).replace('\n', ' ')) if exp_match else ""
             
             # Extract Options (Strict Start-Of-Line Matcher to prevent inline option disruption)
@@ -203,12 +200,12 @@ def extract_questions_from_pdf(filepath):
                 clean_q_lines = []
                 for line in raw_lines:
                     # Filter standard document headers that are not part of the question
-                    if re.match(r'(?i)^(?:PART|Target Exam|Syllabus Focus|RRB NTPC|Combined Master|Subject:|Pattern Benchmark|SECTION|This is for).*', line):
+                    if re.match(r'(?i)^(?:PART|Target Exam|Syllabus Focus|RRB NTPC|Combined Master|Subject:|Pattern Benchmark|SECTION|This is for|Source:).*', line):
                         continue
                     clean_q_lines.append(line)
                 
-                # If Advanced PDF, pop the title line and any word-wrapped title fragments
-                if is_advanced and len(clean_q_lines) > 0:
+                # POP THE TITLE LINE AND ANY WORD-WRAPPED TITLE FRAGMENTS for both Basic and Advanced
+                if len(clean_q_lines) > 0:
                     clean_q_lines.pop(0) # Remove the main heading
                     
                     while len(clean_q_lines) > 0:
@@ -428,6 +425,8 @@ if app_mode == "Admin Dashboard":
     cols[3].write("**Total Correct**")
     cols[4].write("**Total Wrong**")
     
+    leaderboard = []
+    
     for s in students:
         b_score = global_data["marks"][s] if global_data["completed_basic"][s] else 0
         a_score = global_data["adv_marks"][s] if global_data["completed_adv"][s] else "Pending"
@@ -435,12 +434,42 @@ if app_mode == "Admin Dashboard":
         t_correct = b_score + (a_score if isinstance(a_score, int) else 0)
         t_wrong = len(global_data["mistakes"][s])
         
+        leaderboard.append((s, t_correct))
+        
         cols[0].write(f"**{s}**")
         cols[1].write(str(b_score) if global_data["completed_basic"][s] else "Pending")
         cols[2].write(str(a_score))
         cols[3].write(str(t_correct))
         cols[4].write(str(t_wrong))
 
+    # --- MEDAL CEREMONY STAGE FORMAT ---
+    # Sort leaderboard by total correct descending
+    leaderboard.sort(key=lambda x: x[1], reverse=True)
+    
+    top_1_name, top_1_score = leaderboard[0]
+    top_2_name, top_2_score = leaderboard[1]
+    
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center; color: #1e293b;'>🏆 Medal Ceremony</h3>", unsafe_allow_html=True)
+    
+    podium_html = f"""
+    <div style="display: flex; justify-content: center; align-items: flex-end; gap: 30px; margin-top: 30px;">
+        <!-- Rank 2 -->
+        <div style="text-align: center;">
+            <div style="font-size: 22px; font-weight: 700; color: #334155;">🥈 {top_2_name}</div>
+            <div style="font-size: 16px; color: #64748b; margin-bottom: 12px;">{top_2_score} pts</div>
+            <div style="background: linear-gradient(135deg, #cbd5e1 0%, #94a3b8 100%); height: 130px; width: 140px; border-radius: 12px 12px 0 0; display: flex; justify-content: center; align-items: center; color: white; font-size: 45px; font-weight: 900; box-shadow: 0 10px 20px rgba(0,0,0,0.15);">2</div>
+        </div>
+        
+        <!-- Rank 1 -->
+        <div style="text-align: center;">
+            <div style="font-size: 26px; font-weight: 800; color: #1e293b;">🥇 {top_1_name}</div>
+            <div style="font-size: 18px; color: #64748b; margin-bottom: 12px;">{top_1_score} pts</div>
+            <div style="background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%); height: 180px; width: 140px; border-radius: 12px 12px 0 0; display: flex; justify-content: center; align-items: center; color: white; font-size: 55px; font-weight: 900; box-shadow: 0 15px 25px rgba(0,0,0,0.2);">1</div>
+        </div>
+    </div>
+    """
+    st.markdown(podium_html, unsafe_allow_html=True)
 
 # ==================== STUDENT PORTAL ====================
 elif app_mode == "Student Portal":

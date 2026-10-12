@@ -15,103 +15,102 @@ except ImportError:
 st.set_page_config(page_title="History Exam Portal", layout="wide", initial_sidebar_state="expanded")
 
 # ----------------- ANTI-CHEATING CSS & PREMIUM STYLING -----------------
-st.markdown("""
-    <style>
-    /* Prevent text selection and copying */
-    .stApp, p, h1, h2, h3, h4, h5, h6, span, div {
-        -webkit-user-select: none;
-        -ms-user-select: none;
-        user-select: none;
-    }
-    
-    /* Modern Soft Gradient Background */
-    .stApp {
-        background: linear-gradient(135deg, #f0f4fd 0%, #c5d6f6 100%);
-    }
-    
-    /* Sleek Main Header */
-    .main-header {
-        font-size: 42px;
-        font-weight: 900;
-        background: -webkit-linear-gradient(45deg, #1e293b, #3b82f6);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-align: center;
-        margin-bottom: 30px;
-        letter-spacing: -1px;
-    }
-    
-    /* Elegant Login Box */
-    .login-box {
-        background: rgba(255, 255, 255, 0.95); 
-        padding: 40px;
-        max-width: 450px;
-        margin: auto;
-        border-radius: 20px;
-        box-shadow: 0 20px 40px rgba(0,0,0,0.08);
-        border: 1px solid rgba(255,255,255,0.5);
-        backdrop-filter: blur(10px);
-    }
-    
-    /* Analysis Cards */
-    .analysis-card {
-        background: #ffffff;
-        padding: 25px;
-        border-radius: 16px;
-        margin-bottom: 25px;
-        box-shadow: 0 10px 30px rgba(149, 157, 165, 0.15);
-        border-left: 5px solid #3b82f6;
-    }
-    
-    /* Premium Question Container */
-    .question-box {
-        background: #ffffff;
-        padding: 35px;
-        border-radius: 20px;
-        box-shadow: 0 15px 35px rgba(50, 50, 93, 0.1), 0 5px 15px rgba(0, 0, 0, 0.07);
-        margin-bottom: 25px;
-        margin-top: 15px;
-        border-top: 6px solid #4F46E5;
-    }
-    
-    /* Vibrant Question Number Badge */
-    .q-number-badge {
-        background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
-        color: white;
-        padding: 8px 18px;
-        border-radius: 30px;
-        font-weight: 800;
-        font-size: 14px;
-        letter-spacing: 1.5px;
-        text-transform: uppercase;
-        display: inline-block;
-        margin-bottom: 20px;
-        box-shadow: 0 4px 15px rgba(124, 58, 237, 0.3);
-    }
-    
-    /* Interactive Radio Buttons (Options) - Updated to Black Text */
-    div.stRadio > div[role="radiogroup"] > label {
-        background-color: #f8fafc;
-        border: 2px solid #e2e8f0;
-        padding: 16px 20px;
-        border-radius: 12px;
-        margin-bottom: 12px;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        cursor: pointer;
-        color: #000000;
-        font-weight: 500;
-    }
-    div.stRadio > div[role="radiogroup"] > label:hover {
-        border-color: #4F46E5;
-        background-color: #eef2ff;
-        transform: translateY(-3px);
-        box-shadow: 0 8px 20px rgba(79, 70, 229, 0.12);
-    }
-    
-    /* Hide the Streamlit footer, but keep the header so the sidebar arrow works */
-    footer {visibility: hidden;}
-    </style>
-""", unsafe_allow_html=True)
+# Removed indentation so Streamlit does not render this as a code block
+st.markdown("""<style>
+/* Prevent text selection and copying */
+.stApp, p, h1, h2, h3, h4, h5, h6, span, div {
+    -webkit-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+/* Modern Soft Gradient Background */
+.stApp {
+    background: linear-gradient(135deg, #f0f4fd 0%, #c5d6f6 100%);
+}
+
+/* Sleek Main Header */
+.main-header {
+    font-size: 42px;
+    font-weight: 900;
+    background: -webkit-linear-gradient(45deg, #1e293b, #3b82f6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-align: center;
+    margin-bottom: 30px;
+    letter-spacing: -1px;
+}
+
+/* Elegant Login Box */
+.login-box {
+    background: rgba(255, 255, 255, 0.95); 
+    padding: 40px;
+    max-width: 450px;
+    margin: auto;
+    border-radius: 20px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.08);
+    border: 1px solid rgba(255,255,255,0.5);
+    backdrop-filter: blur(10px);
+}
+
+/* Analysis Cards */
+.analysis-card {
+    background: #ffffff;
+    padding: 25px;
+    border-radius: 16px;
+    margin-bottom: 25px;
+    box-shadow: 0 10px 30px rgba(149, 157, 165, 0.15);
+    border-left: 5px solid #3b82f6;
+}
+
+/* Premium Question Container */
+.question-box {
+    background: #ffffff;
+    padding: 35px;
+    border-radius: 20px;
+    box-shadow: 0 15px 35px rgba(50, 50, 93, 0.1), 0 5px 15px rgba(0, 0, 0, 0.07);
+    margin-bottom: 25px;
+    margin-top: 15px;
+    border-top: 6px solid #4F46E5;
+}
+
+/* Vibrant Question Number Badge */
+.q-number-badge {
+    background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+    color: white;
+    padding: 8px 18px;
+    border-radius: 30px;
+    font-weight: 800;
+    font-size: 14px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    display: inline-block;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 15px rgba(124, 58, 237, 0.3);
+}
+
+/* Interactive Radio Buttons (Options) - Updated to Black Text */
+div.stRadio > div[role="radiogroup"] > label {
+    background-color: #f8fafc;
+    border: 2px solid #e2e8f0;
+    padding: 16px 20px;
+    border-radius: 12px;
+    margin-bottom: 12px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    color: #000000;
+    font-weight: 500;
+}
+div.stRadio > div[role="radiogroup"] > label:hover {
+    border-color: #4F46E5;
+    background-color: #eef2ff;
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(79, 70, 229, 0.12);
+}
+
+/* Hide the Streamlit footer, but keep the header so the sidebar arrow works */
+footer {visibility: hidden;}
+</style>""", unsafe_allow_html=True)
 
 # ----------------- ANTI-CHEATING JAVASCRIPT -----------------
 components.html(
@@ -139,17 +138,17 @@ ADMIN_PASSWORD = "Admin123"
 
 # ----------------- FILE MAPPINGS -----------------
 PDF_MAPPING_BASIC = {
-    "Rajat": ["Basic_10.pdf"],
-    "Manab": ["Basic_10.pdf"],
-    "Subho": ["Basic_10.pdf"],
-    "Srijani": ["Basic_10.pdf"]
+    "Rajat": ["Basics_12.pdf"],
+    "Manab": ["Basics_12.pdf"],
+    "Subho": ["Basics_12.pdf"],
+    "Srijani": ["Basics_12.pdf"]
 }
 
 PDF_MAPPING_ADVANCED = {
-    "Rajat": ["Advance_10.pdf"],
-    "Manab": ["Advance_10.pdf"],
-    "Subho": ["Advance_10.pdf"],
-    "Srijani": ["Advance_10.pdf"]
+    "Rajat": ["Advance_12.pdf"],
+    "Manab": ["Advance_12.pdf"],
+    "Subho": ["Advance_12.pdf"],
+    "Srijani": ["Advance_12.pdf"]
 }
 
 # ----------------- BULLETPROOF PDF PARSER -----------------
@@ -187,7 +186,7 @@ def extract_questions_from_pdf(filepath):
             correct_letter = ans_match.group(1).upper() if ans_match else ""
             
             # Parse Explanation safely
-            exp_match = re.search(r'(?im)^[ \t]*(?:Detailed\s+)?Explanation\s*[\:\-]\s*(.*?)(?=\n[ \t]*(?:Exam Source|Official Exam History|Verified Source|Exam Repetitions|Exam Sourced|Target Trend|Sourced From|Strategic Explanation)|$)', answer_and_rest, re.DOTALL)
+            exp_match = re.search(r'(?im)^[ \t]*(?:Detailed\s+)?Explanation\s*[\:\-]\s*(.*?)(?=\n[ \t]*(?:Exam Source|Official Exam History|Verified Source|Exam Repetitions|Exam Sourced|Target Trend|Sourced From|Source/Heritage:|Strategic Explanation)|$)', answer_and_rest, re.DOTALL)
             explanation = clean_pdf_text(exp_match.group(1).replace('\n', ' ')) if exp_match else ""
             
             # Extract Options (Strict Start-Of-Line Matcher to prevent inline option disruption)
@@ -203,7 +202,7 @@ def extract_questions_from_pdf(filepath):
                 clean_q_lines = []
                 for line in raw_lines:
                     # Filter standard document headers that are not part of the question
-                    if re.match(r'(?i)^(?:PART|Target Exam|Syllabus Focus|RRB NTPC|Combined Master|Subject:|Pattern Benchmark|SECTION|This is for|Source:).*', line):
+                    if re.match(r'(?i)^(?:PART|Target Exam|Syllabus Focus|RRB NTPC|Combined Master|Subject:|Focus Area:|Pattern Benchmark|SECTION|This is for|Source:).*', line):
                         continue
                     clean_q_lines.append(line)
                 
@@ -378,7 +377,7 @@ if app_mode == "Admin Dashboard":
             # Individual Student Reset Feature
             st.markdown("##### Target Individual Reset")
             reset_student = st.selectbox("Select Student to Reset:", ["Rajat", "Manab", "Subho", "Srijani"])
-            if st.button(f"Reset Data for {reset_student} 🗑️️"):
+            if st.button(f"Reset Data for {reset_student} 🗑️"):
                 global_data["marks"][reset_student] = 0
                 global_data["adv_marks"][reset_student] = 0
                 global_data["completed_basic"][reset_student] = False
@@ -455,23 +454,19 @@ if app_mode == "Admin Dashboard":
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.markdown("<h3 style='text-align: center; color: #1e293b;'>🏆 Medal Ceremony</h3>", unsafe_allow_html=True)
     
-    podium_html = f"""
-    <div style="display: flex; justify-content: center; align-items: flex-end; gap: 30px; margin-top: 30px;">
-        <!-- Rank 2 -->
-        <div style="text-align: center;">
-            <div style="font-size: 22px; font-weight: 700; color: #334155;">🥈 {top_2_name}</div>
-            <div style="font-size: 16px; color: #64748b; margin-bottom: 12px;">{top_2_score} pts</div>
-            <div style="background: linear-gradient(135deg, #cbd5e1 0%, #94a3b8 100%); height: 130px; width: 140px; border-radius: 12px 12px 0 0; display: flex; justify-content: center; align-items: center; color: white; font-size: 45px; font-weight: 900; box-shadow: 0 10px 20px rgba(0,0,0,0.15);">2</div>
-        </div>
-        
-        <!-- Rank 1 -->
-        <div style="text-align: center;">
-            <div style="font-size: 26px; font-weight: 800; color: #1e293b;">🥇 {top_1_name}</div>
-            <div style="font-size: 18px; color: #64748b; margin-bottom: 12px;">{top_1_score} pts</div>
-            <div style="background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%); height: 180px; width: 140px; border-radius: 12px 12px 0 0; display: flex; justify-content: center; align-items: center; color: white; font-size: 55px; font-weight: 900; box-shadow: 0 15px 25px rgba(0,0,0,0.2);">1</div>
-        </div>
-    </div>
-    """
+    # Unindented to prevent Streamlit from reading it as a Markdown Code Block
+    podium_html = f"""<div style="display: flex; justify-content: center; align-items: flex-end; gap: 30px; margin-top: 30px;">
+<div style="text-align: center;">
+<div style="font-size: 22px; font-weight: 700; color: #334155;">🥈 {top_2_name}</div>
+<div style="font-size: 16px; color: #64748b; margin-bottom: 12px;">{top_2_score} pts</div>
+<div style="background: linear-gradient(135deg, #cbd5e1 0%, #94a3b8 100%); height: 130px; width: 140px; border-radius: 12px 12px 0 0; display: flex; justify-content: center; align-items: center; color: white; font-size: 45px; font-weight: 900; box-shadow: 0 10px 20px rgba(0,0,0,0.15);">2</div>
+</div>
+<div style="text-align: center;">
+<div style="font-size: 26px; font-weight: 800; color: #1e293b;">🥇 {top_1_name}</div>
+<div style="font-size: 18px; color: #64748b; margin-bottom: 12px;">{top_1_score} pts</div>
+<div style="background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%); height: 180px; width: 140px; border-radius: 12px 12px 0 0; display: flex; justify-content: center; align-items: center; color: white; font-size: 55px; font-weight: 900; box-shadow: 0 15px 25px rgba(0,0,0,0.2);">1</div>
+</div>
+</div>"""
     st.markdown(podium_html, unsafe_allow_html=True)
 
 # ==================== STUDENT PORTAL ====================
@@ -515,24 +510,25 @@ elif app_mode == "Student Portal":
             total_wrong = len(global_data["mistakes"][current_user])
             
             st.markdown(f"<h3 style='color:#1e293b; margin-bottom: 20px;'>Dashboard Overview</h3>", unsafe_allow_html=True)
-            st.markdown(f"""
-                <div style="display: flex; gap: 20px; margin-bottom: 30px;">
-                    <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 20px; border-radius: 12px; color: white; flex: 1; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                        <h2 style="margin: 0; font-size: 36px; color: white;">{total_correct}</h2>
-                        <p style="margin: 0; font-size: 16px; opacity: 0.9;">Total Correct Answers</p>
-                    </div>
-                    <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 20px; border-radius: 12px; color: white; flex: 1; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                        <h2 style="margin: 0; font-size: 36px; color: white;">{total_wrong}</h2>
-                        <p style="margin: 0; font-size: 16px; opacity: 0.9;">Total Wrong Answers</p>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
+            
+            # Unindented to prevent Streamlit from reading it as a Markdown Code Block
+            overview_html = f"""<div style="display: flex; gap: 20px; margin-bottom: 30px;">
+<div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 20px; border-radius: 12px; color: white; flex: 1; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+<h2 style="margin: 0; font-size: 36px; color: white;">{total_correct}</h2>
+<p style="margin: 0; font-size: 16px; opacity: 0.9;">Total Correct Answers</p>
+</div>
+<div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 20px; border-radius: 12px; color: white; flex: 1; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+<h2 style="margin: 0; font-size: 36px; color: white;">{total_wrong}</h2>
+<p style="margin: 0; font-size: 16px; opacity: 0.9;">Total Wrong Answers</p>
+</div>
+</div>"""
+            st.markdown(overview_html, unsafe_allow_html=True)
             
         test_phase = st.radio("Select Test Module:", ["Basic Test", "Advanced Test"], horizontal=True)
 
         phase_keys = {
             "Basic Test": ("basic", "📘 Basic Test Phase", "marks", "completed_basic", 300),
-            "Advanced Test": ("advanced", "📙 Advanced Test Phase", "adv_marks", "completed_adv", 360),
+            "Advanced Test": ("advanced", "📙 Advanced Test Phase", "adv_marks", "completed_adv", 330),
         }
         
         phase_id, header_title, score_key, completion_key, test_duration = phase_keys[test_phase]

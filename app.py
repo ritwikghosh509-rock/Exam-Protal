@@ -89,7 +89,7 @@ st.markdown("""<style>
     box-shadow: 0 4px 15px rgba(124, 58, 237, 0.3);
 }
 
-/* Interactive Radio Buttons (Options) - Updated to Black Text */
+/* Interactive Radio Buttons (Options) */
 div.stRadio > div[role="radiogroup"] > label {
     background-color: #f8fafc;
     border: 2px solid #e2e8f0;
@@ -138,17 +138,31 @@ ADMIN_PASSWORD = "Admin123"
 
 # ----------------- FILE MAPPINGS -----------------
 PDF_MAPPING_BASIC = {
-    "Rajat": ["Basics_12.pdf"],
-    "Manab": ["Basics_12.pdf"],
-    "Subho": ["Basics_12.pdf"],
-    "Srijani": ["Basics_12.pdf"]
+    "Rajat": ["Basics_04.pdf"],
+    "Manab": ["Basics_04.pdf"],
+    "Subho": ["Basics_04.pdf"],
+    "Srijani": ["Basics_04.pdf"]
 }
 
 PDF_MAPPING_ADVANCED = {
-    "Rajat": ["Advance_12.pdf"],
-    "Manab": ["Advance_12.pdf"],
-    "Subho": ["Advance_12.pdf"],
-    "Srijani": ["Advance_12.pdf"]
+    "Rajat": ["Advance_04.pdf"],
+    "Manab": ["Advance_04.pdf"],
+    "Subho": ["Advance_04.pdf"],
+    "Srijani": ["Advance_04.pdf"]
+}
+
+PDF_MAPPING_CA1 = {
+    "Rajat": ["Current Affairs.pdf"],
+    "Manab": ["Current Affairs.pdf"],
+    "Subho": ["Current Affairs.pdf"],
+    "Srijani": ["Current Affairs.pdf"]
+}
+
+PDF_MAPPING_CA2 = {
+    "Rajat": ["Current Affairs 2.pdf"],
+    "Manab": ["Current Affairs 2.pdf"],
+    "Subho": ["Current Affairs 2.pdf"],
+    "Srijani": ["Current Affairs 2.pdf"]
 }
 
 # ----------------- BULLETPROOF PDF PARSER -----------------
@@ -168,81 +182,102 @@ def extract_questions_from_pdf(filepath):
         parts = re.split(r'(?i)\n\s*(?:Q(?:uestion)?\s*\d+[\s\.\-\:]+)', full_text)
         parsed_questions = []
 
-        # Check if we are reading the Advanced PDF to apply heading removal
-        is_advanced = "Advance" in filepath
-
         for i in range(1, len(parts)):
             block = parts[i].strip()
             if not block:
                 continue
             
-            # Physically slice the Question & Options away from the Answer & Explanations
-            ans_parts = re.split(r'(?im)^[ \t]*(?:Correct\s+)?Answer\s*[\:\-]', block)
-            q_and_opts = ans_parts[0]  
-            answer_and_rest = ans_parts[1] if len(ans_parts) > 1 else ""
-            
-            # Parse Answer
-            ans_match = re.search(r'(?i)^\s*[\[\(]?([A-D])[\]\)]?', answer_and_rest)
-            correct_letter = ans_match.group(1).upper() if ans_match else ""
-            
-            # Parse Explanation safely
-            exp_match = re.search(r'(?im)^[ \t]*(?:Detailed\s+)?Explanation\s*[\:\-]\s*(.*?)(?=\n[ \t]*(?:Exam Source|Official Exam History|Verified Source|Exam Repetitions|Exam Sourced|Target Trend|Sourced From|Source/Heritage:|Strategic Explanation)|$)', answer_and_rest, re.DOTALL)
+            # 1. Parse Explanation securely
+            exp_match = re.search(r'(?im)^[ \t]*(?:Detailed\s+)?Explanation\s*[\:\-]\s*(.*?)(?=\n[ \t]*(?:Exam Source|Official Exam History|Verified Source|Exam Repetitions|Exam Sourced|Target Trend|Sourced From|Source/Heritage:|Strategic Explanation|Page \d+ of \d+)|$)', block, re.DOTALL)
             explanation = clean_pdf_text(exp_match.group(1).replace('\n', ' ')) if exp_match else ""
+            if not explanation:
+                exp_match = re.search(r'(?i)\b(?:Detailed\s+)?Explanation\s*[\:\-]\s*(.*?)(?=\b(?:Exam Source|Official Exam History|Verified Source|Exam Repetitions|Exam Sourced|Target Trend|Sourced From|Source/Heritage:|Strategic Explanation|Page \d+ of \d+)|$)', block, re.DOTALL)
+                explanation = clean_pdf_text(exp_match.group(1).replace('\n', ' ')) if exp_match else ""
             
-            # Extract Options (Strict Start-Of-Line Matcher to prevent inline option disruption)
-            opt_pattern = r'(?im)^[ \t]*[\[\(]?([A-D])[\]\)\.][ \t]+([\s\S]*?)(?=^[ \t]*[\[\(]?[A-D][\]\)\.][ \t]+|\Z)'
-            option_matches = list(re.finditer(opt_pattern, q_and_opts))[-4:]
+            # 2. Extract Answer Line securely
+            ans_match = re.search(r'(?im)^[ \t]*(?:Correct\s+)?Answer\s*[\:\-]\s*[\[\(]?([A-Da-d])[\]\)]?(.*)', block)
+            correct_letter = re.sub(r'[\(\)\.]', '', ans_match.group(1)).upper() if ans_match else ""
+            
+            # 3. Clean block to isolate Question & Options safely
+            q_and_opts = block
+            
+            # Strip explicit explanation block completely
+            q_and_opts = re.sub(r'(?i)\b(?:Detailed\s+)?Explanation\s*[\:\-].*', '', q_and_opts, flags=re.DOTALL)
+            
+            # Strip implicit explanation (if no explicit "Explanation:" found)
+            if not exp_match and ans_match:
+                ans_full_line = ans_match.group(0)
+                ans_idx = q_and_opts.find(ans_full_line)
+                if ans_idx != -1:
+                    text_after_ans = q_and_opts[ans_idx + len(ans_full_line):]
+                    if not re.search(r'(?im)^[ \t]*(\([A-Da-d]\)|[A-Da-d]\))', text_after_ans):
+                        if not explanation:
+                            explanation = text_after_ans.strip()
+                        q_and_opts = q_and_opts[:ans_idx + len(ans_full_line)]
+            
+            # Strip Answer line itself completely
+            q_and_opts = re.sub(r'(?im)^[ \t]*(?:Correct\s+)?Answer\s*[\:\-].*\n?', '', q_and_opts)
+            
+            # Strip structural metadata that leaks into options
+            q_and_opts = re.sub(r'(?i)[\-\s]*Exam Source\s*[\:\-].*$', '', q_and_opts, flags=re.MULTILINE)
+            q_and_opts = re.sub(r'(?i)[\-\s]*Topic\s*[\:\-].*$', '', q_and_opts, flags=re.MULTILINE)
+            q_and_opts = re.sub(r'(?im)^[ \t]*Page \d+ of \d+.*$', '', q_and_opts)
+
+            # FORCIBLY normalize ALL option markers to be preceded by a newline and followed by a space.
+            # This fixes "2 options showing" by tearing squished 2-column options apart.
+            q_and_opts = re.sub(r'(?i)(?<![a-zA-Z0-9])(\([A-D]\)|[A-D]\))\s*', r'\n\1 ', q_and_opts)
+            
+            # 4. Extract Options using Start-Of-Line Matcher
+            opt_pattern = r'(?im)^(\([A-D]\)|[A-D]\))\s+([\s\S]*?)(?=^(?:\([A-D]\)|[A-D]\))\s+|\Z)'
+            option_matches = list(re.finditer(opt_pattern, q_and_opts))
+            option_matches = option_matches[-4:] # Safely get the last 4
             
             if len(option_matches) >= 2:
-                first_opt_idx = option_matches[0].start()
+                # Get the raw question text (everything before the first option)
+                first_opt_idx = min(opt.start() for opt in option_matches)
                 question_text_raw = q_and_opts[:first_opt_idx].strip()
                 
-                # Clean up residual headers above the question
+                # Filter out document headers without deleting real question lines
                 raw_lines = [line.strip() for line in question_text_raw.split('\n') if line.strip()]
                 clean_q_lines = []
                 for line in raw_lines:
-                    # Filter standard document headers that are not part of the question
-                    if re.match(r'(?i)^(?:PART|Target Exam|Syllabus Focus|RRB NTPC|Combined Master|Subject:|Focus Area:|Pattern Benchmark|SECTION|This is for|Source:).*', line):
+                    # Safety filter for structural headers
+                    if re.match(r'(?i)^(?:PART|Target Exam|Syllabus Focus|RRB NTPC|Combined Master|Subject:|Focus Area:|Pattern Benchmark|SECTION|This is for|JANUARY \d+ CURRENT AFFAIRS|■■Part|Practice Question Bank).*', line):
+                        continue
+                    if re.match(r'(?i)^(?:shift\-pattern\)?|option\)?|Topic:).*', line):
                         continue
                     clean_q_lines.append(line)
-                
-                # POP THE TITLE LINE AND ANY WORD-WRAPPED TITLE FRAGMENTS for both Basic and Advanced
-                if len(clean_q_lines) > 0:
-                    clean_q_lines.pop(0) # Remove the main heading
                     
-                    while len(clean_q_lines) > 0:
-                        nxt_line = clean_q_lines[0]
-                        if nxt_line.endswith(')') and '(' not in nxt_line:
-                            clean_q_lines.pop(0)
-                        elif re.match(r'(?i)^(?:shift\-pattern\)?|option\)?)$', nxt_line):
-                            clean_q_lines.pop(0)
-                        else:
-                            break
-                
                 question_text = clean_pdf_text("\n".join(clean_q_lines))
                 
-                options = []
-                correct_answer = ""
-
+                # Clean trailing metadata from explanation
+                explanation = re.sub(r'(?i)Page \d+ of \d+.*', '', explanation).strip()
+                explanation = clean_pdf_text(explanation.replace('\n', ' '))
+                
+                # Dictionary Auto-Sorter for options (fixes Column Jumbling in Current Affairs 2)
+                options_dict = {}
                 for opt in option_matches:
-                    opt_letter = opt.group(1).upper()
+                    opt_letter = re.sub(r'[\(\)\.]', '', opt.group(1)).upper()
                     opt_text = clean_pdf_text(opt.group(2).replace('\n', ' '))
                     clean_opt = re.sub(r'(?i)\(\s*correct\s*\)', '', opt_text).strip()
-                    options.append(clean_opt)
+                    options_dict[opt_letter] = clean_opt
                     
-                    if correct_letter == opt_letter:
-                        correct_answer = clean_opt
+                # Forces alphabetical sorting (A, B, C, D) so they never display out of order
+                sorted_letters = sorted(options_dict.keys())
+                options = [options_dict[k] for k in sorted_letters]
                 
-                if not correct_answer and options:
+                if correct_letter in options_dict:
+                    correct_answer = options_dict[correct_letter]
+                elif options:
                     correct_answer = options[0]
-                
+                    
                 if question_text and options:
                     parsed_questions.append({
                         "q": question_text,
                         "options": options,
                         "correct": correct_answer,
                         "exp": explanation,
-                        "topic": "History/Geography"
+                        "topic": "History/Geography/Current Affairs"
                     })
                     
         return parsed_questions
@@ -254,12 +289,26 @@ FALLBACK = {
 }
 
 def get_student_questions(student_name, phase):
-    mapping = PDF_MAPPING_BASIC if phase == "basic" else PDF_MAPPING_ADVANCED
+    if phase == "basic":
+        mapping = PDF_MAPPING_BASIC
+    elif phase == "advanced":
+        mapping = PDF_MAPPING_ADVANCED
+    elif phase == "ca1":
+        mapping = PDF_MAPPING_CA1
+    else:
+        mapping = PDF_MAPPING_CA2
+        
+    all_parsed_questions = []
+    
     for filename in mapping[student_name]:
         if os.path.exists(filename):
             parsed = extract_questions_from_pdf(filename)
             if len(parsed) > 0: 
-                return parsed, filename
+                all_parsed_questions.extend(parsed)
+                
+    if len(all_parsed_questions) > 0:
+        return all_parsed_questions, ", ".join(mapping[student_name])
+        
     return FALLBACK[student_name], "PDF File Missing"
 
 # ----------------- DYNAMIC TIMER FUNCTION -----------------
@@ -312,12 +361,18 @@ def get_global_data():
     return {
         "marks": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
         "adv_marks": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
+        "ca1_marks": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
+        "ca2_marks": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
         "completed_basic": {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False},
         "completed_adv": {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False},
+        "completed_ca1": {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False},
+        "completed_ca2": {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False},
         "mistakes": {"Rajat": [], "Manab": [], "Subho": [], "Srijani": []},
         "submitted_answers": {
             "basic": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}},
-            "advanced": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}}
+            "advanced": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}},
+            "ca1": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}},
+            "ca2": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}}
         }
     }
 
@@ -339,7 +394,7 @@ def submit_test(phase_id, current_user, questions, test_phase, score_key, comple
         else:
             global_data["mistakes"][current_user].append({
                 "phase": test_phase,
-                "topic": q_data_.get('topic', 'General History'),
+                "topic": q_data_.get('topic', 'General Knowledge'),
                 "q": q_data_['q']
             })
             
@@ -353,7 +408,7 @@ if 'logged_in' not in st.session_state:
 if 'current_user' not in st.session_state:
     st.session_state.current_user = None
 
-st.markdown('<div class="main-header">Ancient History Examination Portal</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">History & Current Affairs Portal</div>', unsafe_allow_html=True)
 
 if not PYPDF_AVAILABLE:
     st.error("🚨 CRITICAL ERROR: pypdf is NOT installed.")
@@ -380,11 +435,17 @@ if app_mode == "Admin Dashboard":
             if st.button(f"Reset Data for {reset_student} 🗑️"):
                 global_data["marks"][reset_student] = 0
                 global_data["adv_marks"][reset_student] = 0
+                global_data["ca1_marks"][reset_student] = 0
+                global_data["ca2_marks"][reset_student] = 0
                 global_data["completed_basic"][reset_student] = False
                 global_data["completed_adv"][reset_student] = False
+                global_data["completed_ca1"][reset_student] = False
+                global_data["completed_ca2"][reset_student] = False
                 global_data["mistakes"][reset_student] = []
                 global_data["submitted_answers"]["basic"][reset_student] = {}
                 global_data["submitted_answers"]["advanced"][reset_student] = {}
+                global_data["submitted_answers"]["ca1"][reset_student] = {}
+                global_data["submitted_answers"]["ca2"][reset_student] = {}
                 st.success(f"Successfully wiped all data and progress for {reset_student}.")
                 time.sleep(1)
                 st.rerun()
@@ -396,12 +457,18 @@ if app_mode == "Admin Dashboard":
             if st.button("Reset Entire System 🚨"):
                 global_data["marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0}
                 global_data["adv_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0}
+                global_data["ca1_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0}
+                global_data["ca2_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0}
                 global_data["completed_basic"] = {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False}
                 global_data["completed_adv"] = {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False}
+                global_data["completed_ca1"] = {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False}
+                global_data["completed_ca2"] = {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False}
                 global_data["mistakes"] = {"Rajat": [], "Manab": [], "Subho": [], "Srijani": []}
                 global_data["submitted_answers"] = {
                     "basic": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}},
-                    "advanced": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}}
+                    "advanced": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}},
+                    "ca1": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}},
+                    "ca2": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}}
                 }
                 
                 st.cache_resource.clear()
@@ -420,32 +487,37 @@ if app_mode == "Admin Dashboard":
         st.rerun()
     
     st.subheader("Global Scoreboard")
-    cols = st.columns(5)
+    cols = st.columns(7)
     cols[0].write("**Student**")
     cols[1].write("**Basic**")
-    cols[2].write("**Advanced**")
-    cols[3].write("**Total Correct**")
-    cols[4].write("**Total Wrong**")
+    cols[2].write("**Adv**")
+    cols[3].write("**CA 1**")
+    cols[4].write("**CA 2**")
+    cols[5].write("**Total Correct**")
+    cols[6].write("**Total Wrong**")
     
     leaderboard = []
     
     for s in students:
         b_score = global_data["marks"][s] if global_data["completed_basic"][s] else 0
-        a_score = global_data["adv_marks"][s] if global_data["completed_adv"][s] else "Pending"
+        a_score = global_data["adv_marks"][s] if global_data["completed_adv"][s] else 0
+        c1_score = global_data["ca1_marks"][s] if global_data["completed_ca1"][s] else 0
+        c2_score = global_data["ca2_marks"][s] if global_data["completed_ca2"][s] else 0
         
-        t_correct = b_score + (a_score if isinstance(a_score, int) else 0)
+        t_correct = b_score + a_score + c1_score + c2_score
         t_wrong = len(global_data["mistakes"][s])
         
         leaderboard.append((s, t_correct))
         
         cols[0].write(f"**{s}**")
-        cols[1].write(str(b_score) if global_data["completed_basic"][s] else "Pending")
-        cols[2].write(str(a_score))
-        cols[3].write(str(t_correct))
-        cols[4].write(str(t_wrong))
+        cols[1].write(str(b_score) if global_data["completed_basic"][s] else "-")
+        cols[2].write(str(a_score) if global_data["completed_adv"][s] else "-")
+        cols[3].write(str(c1_score) if global_data["completed_ca1"][s] else "-")
+        cols[4].write(str(c2_score) if global_data["completed_ca2"][s] else "-")
+        cols[5].write(str(t_correct))
+        cols[6].write(str(t_wrong))
 
     # --- MEDAL CEREMONY STAGE FORMAT ---
-    # Sort leaderboard by total correct descending
     leaderboard.sort(key=lambda x: x[1], reverse=True)
     
     top_1_name, top_1_score = leaderboard[0]
@@ -454,7 +526,6 @@ if app_mode == "Admin Dashboard":
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.markdown("<h3 style='text-align: center; color: #1e293b;'>🏆 Medal Ceremony</h3>", unsafe_allow_html=True)
     
-    # Unindented to prevent Streamlit from reading it as a Markdown Code Block
     podium_html = f"""<div style="display: flex; justify-content: center; align-items: flex-end; gap: 30px; margin-top: 30px;">
 <div style="text-align: center;">
 <div style="font-size: 22px; font-weight: 700; color: #334155;">🥈 {top_2_name}</div>
@@ -494,6 +565,8 @@ elif app_mode == "Student Portal":
         st.sidebar.header(f"👋 Welcome, {current_user}")
         st.sidebar.write(f"**Basic Score:** {global_data['marks'][current_user] if global_data['completed_basic'][current_user] else 'Pending'}")
         st.sidebar.write(f"**Advanced Score:** {global_data['adv_marks'][current_user] if global_data['completed_adv'][current_user] else 'Pending'}")
+        st.sidebar.write(f"**CA 1 Score:** {global_data['ca1_marks'][current_user] if global_data['completed_ca1'][current_user] else 'Pending'}")
+        st.sidebar.write(f"**CA 2 Score:** {global_data['ca2_marks'][current_user] if global_data['completed_ca2'][current_user] else 'Pending'}")
         st.sidebar.markdown("---")
         
         if st.sidebar.button("Logout"):
@@ -502,16 +575,17 @@ elif app_mode == "Student Portal":
             st.rerun()
             
         # ----------------- CONDITIONAL STUDENT DASHBOARD OVERVIEW -----------------
-        if global_data["completed_basic"][current_user] or global_data["completed_adv"][current_user]:
+        if global_data["completed_basic"][current_user] or global_data["completed_adv"][current_user] or global_data["completed_ca1"][current_user] or global_data["completed_ca2"][current_user]:
             b_score = global_data["marks"][current_user] if global_data["completed_basic"][current_user] else 0
             a_score = global_data["adv_marks"][current_user] if global_data["completed_adv"][current_user] else 0
+            c1_score = global_data["ca1_marks"][current_user] if global_data["completed_ca1"][current_user] else 0
+            c2_score = global_data["ca2_marks"][current_user] if global_data["completed_ca2"][current_user] else 0
             
-            total_correct = b_score + a_score
+            total_correct = b_score + a_score + c1_score + c2_score
             total_wrong = len(global_data["mistakes"][current_user])
             
             st.markdown(f"<h3 style='color:#1e293b; margin-bottom: 20px;'>Dashboard Overview</h3>", unsafe_allow_html=True)
             
-            # Unindented to prevent Streamlit from reading it as a Markdown Code Block
             overview_html = f"""<div style="display: flex; gap: 20px; margin-bottom: 30px;">
 <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 20px; border-radius: 12px; color: white; flex: 1; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
 <h2 style="margin: 0; font-size: 36px; color: white;">{total_correct}</h2>
@@ -524,11 +598,13 @@ elif app_mode == "Student Portal":
 </div>"""
             st.markdown(overview_html, unsafe_allow_html=True)
             
-        test_phase = st.radio("Select Test Module:", ["Basic Test", "Advanced Test"], horizontal=True)
+        test_phase = st.radio("Select Test Module:", ["Basic Test", "Advanced Test", "Current Affairs 1", "Current Affairs 2"], horizontal=True)
 
         phase_keys = {
             "Basic Test": ("basic", "📘 Basic Test Phase", "marks", "completed_basic", 300),
             "Advanced Test": ("advanced", "📙 Advanced Test Phase", "adv_marks", "completed_adv", 330),
+            "Current Affairs 1": ("ca1", "🌍 Current Affairs 1 Phase", "ca1_marks", "completed_ca1", 300),
+            "Current Affairs 2": ("ca2", "🌎 Current Affairs 2 Phase", "ca2_marks", "completed_ca2", 300),
         }
         
         phase_id, header_title, score_key, completion_key, test_duration = phase_keys[test_phase]
@@ -539,6 +615,12 @@ elif app_mode == "Student Portal":
         if phase_id == "advanced" and not global_data["completed_basic"][current_user]:
             st.warning("⚠️ You must complete your assigned Basic Test before accessing the Advanced modules.")
         
+        elif phase_id == "ca1" and not global_data["completed_adv"][current_user]:
+            st.warning("⚠️ You must complete your assigned Advanced Test before accessing Current Affairs 1.")
+            
+        elif phase_id == "ca2" and not global_data["completed_ca1"][current_user]:
+            st.warning("⚠️ You must complete Current Affairs 1 before accessing Current Affairs 2.")
+            
         elif global_data[completion_key][current_user]:
             st.success("You have successfully submitted this test. Review your summary below.")
             
@@ -546,7 +628,6 @@ elif app_mode == "Student Portal":
             st.subheader("Detailed Test Review")
             for i, q_data in enumerate(questions):
                 
-                # Retrieve submitted answers directly from the persistent global dictionary
                 user_ans = global_data["submitted_answers"][phase_id][current_user].get(i, "TIMEOUT")
                 correct_ans = q_data['correct']
                 
@@ -615,7 +696,6 @@ elif app_mode == "Student Portal":
                         with col1:
                             prev_btn = st.form_submit_button("← Previous") if idx > 0 else False
                             
-                        # Dedicated Save Answer option for the final question
                         with col2:
                             if idx == len(questions) - 1:
                                 save_btn = st.form_submit_button("Save Answer 💾")

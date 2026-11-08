@@ -187,16 +187,15 @@ def extract_questions_from_pdf(filepath):
             if not block:
                 continue
             
-            # 1. Parse Explanation securely
-            exp_match = re.search(r'(?im)^[ \t]*(?:Detailed\s+)?Explanation\s*[\:\-]\s*(.*?)(?=\n[ \t]*(?:Exam Source|Official Exam History|Verified Source|Exam Repetitions|Exam Sourced|Target Trend|Sourced From|Source/Heritage:|Strategic Explanation|Page \d+ of \d+)|$)', block, re.DOTALL)
-            explanation = clean_pdf_text(exp_match.group(1).replace('\n', ' ')) if exp_match else ""
-            if not explanation:
-                exp_match = re.search(r'(?i)\b(?:Detailed\s+)?Explanation\s*[\:\-]\s*(.*?)(?=\b(?:Exam Source|Official Exam History|Verified Source|Exam Repetitions|Exam Sourced|Target Trend|Sourced From|Source/Heritage:|Strategic Explanation|Page \d+ of \d+)|$)', block, re.DOTALL)
-                explanation = clean_pdf_text(exp_match.group(1).replace('\n', ' ')) if exp_match else ""
-            
-            # 2. Extract Answer Line securely
-            ans_match = re.search(r'(?im)^[ \t]*(?:Correct\s+)?Answer\s*[\:\-]\s*[\[\(]?([A-Da-d])[\]\)]?(.*)', block)
+            # 1. Capture the correct answer line securely
+            ans_match = re.search(r'(?im)^[ \t]*(?:Correct\s+)?Answer\s*[\:\-]\s*([\(]?[A-Da-d][\)\.]?)(.*)', block)
             correct_letter = re.sub(r'[\(\)\.]', '', ans_match.group(1)).upper() if ans_match else ""
+            
+            # 2. Capture explicit Explanation
+            exp_match = re.search(r'(?im)^[ \t]*(?:Detailed\s+)?Explanation\s*[\:\-]\s*(.*)', block, re.DOTALL)
+            explanation = ""
+            if exp_match:
+                explanation = exp_match.group(1)
             
             # 3. Clean block to isolate Question & Options safely
             q_and_opts = block
@@ -209,8 +208,10 @@ def extract_questions_from_pdf(filepath):
                 ans_full_line = ans_match.group(0)
                 ans_idx = q_and_opts.find(ans_full_line)
                 if ans_idx != -1:
+                    # Check if any options appear AFTER the answer line
                     text_after_ans = q_and_opts[ans_idx + len(ans_full_line):]
-                    if not re.search(r'(?im)^[ \t]*(\([A-Da-d]\)|[A-Da-d]\))', text_after_ans):
+                    # Only truncate if NO options are found below the answer
+                    if not re.search(r'(?im)^[ \t]*(\([A-Da-d]\)|[A-Da-d]\)|[A-Da-d]\.)', text_after_ans):
                         if not explanation:
                             explanation = text_after_ans.strip()
                         q_and_opts = q_and_opts[:ans_idx + len(ans_full_line)]
@@ -222,15 +223,13 @@ def extract_questions_from_pdf(filepath):
             q_and_opts = re.sub(r'(?i)[\-\s]*Exam Source\s*[\:\-].*$', '', q_and_opts, flags=re.MULTILINE)
             q_and_opts = re.sub(r'(?i)[\-\s]*Topic\s*[\:\-].*$', '', q_and_opts, flags=re.MULTILINE)
             q_and_opts = re.sub(r'(?im)^[ \t]*Page \d+ of \d+.*$', '', q_and_opts)
-
-            # FORCIBLY normalize ALL option markers to be preceded by a newline and followed by a space.
-            # This fixes "2 options showing" by tearing squished 2-column options apart.
-            q_and_opts = re.sub(r'(?i)(?<![a-zA-Z0-9])(\([A-D]\)|[A-D]\))\s*', r'\n\1 ', q_and_opts)
             
-            # 4. Extract Options using Start-Of-Line Matcher
-            opt_pattern = r'(?im)^(\([A-D]\)|[A-D]\))\s+([\s\S]*?)(?=^(?:\([A-D]\)|[A-D]\))\s+|\Z)'
+            # 4. Extract Options using a flexible Start-Of-Line OR whitespace Matcher (Reverted to stable version)
+            opt_pattern = r'(?i)(?:^|\s+)([\(]?[A-D][\)\.])[ \t]+([\s\S]*?)(?=(?:^|\s+)[\(]?[A-D][\)\.][ \t]+|\Z)'
             option_matches = list(re.finditer(opt_pattern, q_and_opts))
-            option_matches = option_matches[-4:] # Safely get the last 4
+            
+            # Use the last 4 matches in case there's a false positive earlier in the text
+            option_matches = option_matches[-4:]
             
             if len(option_matches) >= 2:
                 # Get the raw question text (everything before the first option)
@@ -603,8 +602,8 @@ elif app_mode == "Student Portal":
         phase_keys = {
             "Basic Test": ("basic", "📘 Basic Test Phase", "marks", "completed_basic", 300),
             "Advanced Test": ("advanced", "📙 Advanced Test Phase", "adv_marks", "completed_adv", 330),
-            "Current Affairs 1": ("ca1", "🌍 Current Affairs 1 Phase", "ca1_marks", "completed_ca1", 300),
-            "Current Affairs 2": ("ca2", "🌎 Current Affairs 2 Phase", "ca2_marks", "completed_ca2", 300),
+            "Current Affairs 1": ("ca1", "🌍 Current Affairs 1 Phase", "ca1_marks", "completed_ca1", 240),
+            "Current Affairs 2": ("ca2", "🌎 Current Affairs 2 Phase", "ca2_marks", "completed_ca2", 240),
         }
         
         phase_id, header_title, score_key, completion_key, test_duration = phase_keys[test_phase]

@@ -138,31 +138,24 @@ ADMIN_PASSWORD = "Admin123"
 
 # ----------------- FILE MAPPINGS -----------------
 PDF_MAPPING_BASIC = {
-    "Rajat": ["Basics_04.pdf"],
-    "Manab": ["Basics_04.pdf"],
-    "Subho": ["Basics_04.pdf"],
-    "Srijani": ["Basics_04.pdf"]
+    "Rajat": ["Basic_12-11.pdf"],
+    "Manab": ["Basic_12-11.pdf"],
+    "Subho": ["Basic_12-11.pdf"],
+    "Srijani": ["Basic_12-11.pdf"]
 }
 
 PDF_MAPPING_ADVANCED = {
-    "Rajat": ["Advance_04.pdf"],
-    "Manab": ["Advance_04.pdf"],
-    "Subho": ["Advance_04.pdf"],
-    "Srijani": ["Advance_04.pdf"]
+    "Rajat": ["Advance_12-11.pdf"],
+    "Manab": ["Advance_12-11.pdf"],
+    "Subho": ["Advance_12-11.pdf"],
+    "Srijani": ["Advance_12-11.pdf"]
 }
 
-PDF_MAPPING_CA1 = {
-    "Rajat": ["Current Affairs.pdf"],
-    "Manab": ["Current Affairs.pdf"],
-    "Subho": ["Current Affairs.pdf"],
-    "Srijani": ["Current Affairs.pdf"]
-}
-
-PDF_MAPPING_CA2 = {
-    "Rajat": ["Current Affairs 2.pdf"],
-    "Manab": ["Current Affairs 2.pdf"],
-    "Subho": ["Current Affairs 2.pdf"],
-    "Srijani": ["Current Affairs 2.pdf"]
+PDF_MAPPING_CA = {
+    "Rajat": ["Jan_Currentaffairs.pdf"],
+    "Manab": ["Jan_Currentaffairs.pdf"],
+    "Subho": ["Jan_Currentaffairs.pdf"],
+    "Srijani": ["Jan_Currentaffairs.pdf"]
 }
 
 # ----------------- BULLETPROOF PDF PARSER -----------------
@@ -178,8 +171,8 @@ def extract_questions_from_pdf(filepath):
         reader = PdfReader(filepath)
         full_text = "\n" + "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
         
-        # Split document securely at Q1., Question 1:, etc.
-        parts = re.split(r'(?i)\n\s*(?:Q(?:uestion)?\s*\d+[\s\.\-\:]+)', full_text)
+        # Split document securely at Q1., Question 1:, including optional difficulty tags like "STRAIGHTFORWARD Q1."
+        parts = re.split(r'(?i)(?:\n|^)\s*(?:(?:STRAIGHTFORWARD|TRICKY|IN-DEPTH)\s+)?Q(?:uestion)?\s*\d+[\s\.\-\:]+', full_text)
         parsed_questions = []
 
         for i in range(1, len(parts)):
@@ -208,9 +201,7 @@ def extract_questions_from_pdf(filepath):
                 ans_full_line = ans_match.group(0)
                 ans_idx = q_and_opts.find(ans_full_line)
                 if ans_idx != -1:
-                    # Check if any options appear AFTER the answer line
                     text_after_ans = q_and_opts[ans_idx + len(ans_full_line):]
-                    # Only truncate if NO options are found below the answer
                     if not re.search(r'(?im)^[ \t]*(\([A-Da-d]\)|[A-Da-d]\)|[A-Da-d]\.)', text_after_ans):
                         if not explanation:
                             explanation = text_after_ans.strip()
@@ -221,15 +212,19 @@ def extract_questions_from_pdf(filepath):
             
             # Strip structural metadata that leaks into options
             q_and_opts = re.sub(r'(?i)[\-\s]*Exam Source\s*[\:\-].*$', '', q_and_opts, flags=re.MULTILINE)
+            q_and_opts = re.sub(r'(?i)[\-\s]*Exam Shift\s*[\:\-].*$', '', q_and_opts, flags=re.MULTILINE)
             q_and_opts = re.sub(r'(?i)[\-\s]*Topic\s*[\:\-].*$', '', q_and_opts, flags=re.MULTILINE)
             q_and_opts = re.sub(r'(?im)^[ \t]*Page \d+ of \d+.*$', '', q_and_opts)
+            q_and_opts = re.sub(r'(?im)^.*RRB NTPC.*$', '', q_and_opts)
+
+            # FORCIBLY normalize ALL option markers to be preceded by a newline and followed by a space.
+            # This fixes "2 options showing" by tearing squished 2-column options apart.
+            q_and_opts = re.sub(r'(?i)(?<=\S)\s*(\([A-D]\)|[A-D]\)|[A-D]\.)', r'\n\1 ', q_and_opts)
             
-            # 4. Extract Options using a flexible Start-Of-Line OR whitespace Matcher (Reverted to stable version)
-            opt_pattern = r'(?i)(?:^|\s+)([\(]?[A-D][\)\.])[ \t]+([\s\S]*?)(?=(?:^|\s+)[\(]?[A-D][\)\.][ \t]+|\Z)'
+            # 4. Extract Options using Start-Of-Line Matcher
+            opt_pattern = r'(?im)^[ \t]*(\([A-D]\)|[A-D]\)|[A-D]\.)\s+([\s\S]*?)(?=^[ \t]*(?:\([A-D]\)|[A-D]\)|[A-D]\.)\s+|\Z)'
             option_matches = list(re.finditer(opt_pattern, q_and_opts))
-            
-            # Use the last 4 matches in case there's a false positive earlier in the text
-            option_matches = option_matches[-4:]
+            option_matches = option_matches[-4:] # Safely get the last 4
             
             if len(option_matches) >= 2:
                 # Get the raw question text (everything before the first option)
@@ -241,9 +236,12 @@ def extract_questions_from_pdf(filepath):
                 clean_q_lines = []
                 for line in raw_lines:
                     # Safety filter for structural headers
-                    if re.match(r'(?i)^(?:PART|Target Exam|Syllabus Focus|RRB NTPC|Combined Master|Subject:|Focus Area:|Pattern Benchmark|SECTION|This is for|JANUARY \d+ CURRENT AFFAIRS|■■Part|Practice Question Bank).*', line):
+                    if re.match(r'(?i)^(?:PART|Target Exam|Syllabus Focus|RRB NTPC|Combined Master|Subject:|Focus Area:|Pattern Benchmark|SECTION|This is for|JANUARY \d+ CURRENT AFFAIRS|■■Part|Practice Question Bank|Question Difficulty|Compiled for).*', line):
                         continue
                     if re.match(r'(?i)^(?:shift\-pattern\)?|option\)?|Topic:).*', line):
+                        continue
+                    # Safely remove all-caps headings like "POST-GUPTA LITERATURE" or "CHOLA TAXATION SYSTEM" at the start of the question
+                    if len(clean_q_lines) == 0 and (line.isupper() or re.match(r'(?i)^(?:POST-GUPTA|CHOLA)\b', line)) and not line.endswith('?'):
                         continue
                     clean_q_lines.append(line)
                     
@@ -253,7 +251,7 @@ def extract_questions_from_pdf(filepath):
                 explanation = re.sub(r'(?i)Page \d+ of \d+.*', '', explanation).strip()
                 explanation = clean_pdf_text(explanation.replace('\n', ' '))
                 
-                # Dictionary Auto-Sorter for options (fixes Column Jumbling in Current Affairs 2)
+                # Dictionary Auto-Sorter for options (fixes Column Jumbling in Current Affairs)
                 options_dict = {}
                 for opt in option_matches:
                     opt_letter = re.sub(r'[\(\)\.]', '', opt.group(1)).upper()
@@ -292,10 +290,8 @@ def get_student_questions(student_name, phase):
         mapping = PDF_MAPPING_BASIC
     elif phase == "advanced":
         mapping = PDF_MAPPING_ADVANCED
-    elif phase == "ca1":
-        mapping = PDF_MAPPING_CA1
     else:
-        mapping = PDF_MAPPING_CA2
+        mapping = PDF_MAPPING_CA
         
     all_parsed_questions = []
     
@@ -360,18 +356,15 @@ def get_global_data():
     return {
         "marks": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
         "adv_marks": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
-        "ca1_marks": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
-        "ca2_marks": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
+        "ca_marks": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
         "completed_basic": {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False},
         "completed_adv": {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False},
-        "completed_ca1": {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False},
-        "completed_ca2": {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False},
+        "completed_ca": {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False},
         "mistakes": {"Rajat": [], "Manab": [], "Subho": [], "Srijani": []},
         "submitted_answers": {
             "basic": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}},
             "advanced": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}},
-            "ca1": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}},
-            "ca2": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}}
+            "ca": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}}
         }
     }
 
@@ -434,17 +427,14 @@ if app_mode == "Admin Dashboard":
             if st.button(f"Reset Data for {reset_student} 🗑️"):
                 global_data["marks"][reset_student] = 0
                 global_data["adv_marks"][reset_student] = 0
-                global_data["ca1_marks"][reset_student] = 0
-                global_data["ca2_marks"][reset_student] = 0
+                global_data["ca_marks"][reset_student] = 0
                 global_data["completed_basic"][reset_student] = False
                 global_data["completed_adv"][reset_student] = False
-                global_data["completed_ca1"][reset_student] = False
-                global_data["completed_ca2"][reset_student] = False
+                global_data["completed_ca"][reset_student] = False
                 global_data["mistakes"][reset_student] = []
                 global_data["submitted_answers"]["basic"][reset_student] = {}
                 global_data["submitted_answers"]["advanced"][reset_student] = {}
-                global_data["submitted_answers"]["ca1"][reset_student] = {}
-                global_data["submitted_answers"]["ca2"][reset_student] = {}
+                global_data["submitted_answers"]["ca"][reset_student] = {}
                 st.success(f"Successfully wiped all data and progress for {reset_student}.")
                 time.sleep(1)
                 st.rerun()
@@ -456,18 +446,15 @@ if app_mode == "Admin Dashboard":
             if st.button("Reset Entire System 🚨"):
                 global_data["marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0}
                 global_data["adv_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0}
-                global_data["ca1_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0}
-                global_data["ca2_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0}
+                global_data["ca_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0}
                 global_data["completed_basic"] = {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False}
                 global_data["completed_adv"] = {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False}
-                global_data["completed_ca1"] = {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False}
-                global_data["completed_ca2"] = {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False}
+                global_data["completed_ca"] = {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False}
                 global_data["mistakes"] = {"Rajat": [], "Manab": [], "Subho": [], "Srijani": []}
                 global_data["submitted_answers"] = {
                     "basic": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}},
                     "advanced": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}},
-                    "ca1": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}},
-                    "ca2": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}}
+                    "ca": {"Rajat": {}, "Manab": {}, "Subho": {}, "Srijani": {}}
                 }
                 
                 st.cache_resource.clear()
@@ -486,24 +473,22 @@ if app_mode == "Admin Dashboard":
         st.rerun()
     
     st.subheader("Global Scoreboard")
-    cols = st.columns(7)
+    cols = st.columns(6)
     cols[0].write("**Student**")
     cols[1].write("**Basic**")
     cols[2].write("**Adv**")
-    cols[3].write("**CA 1**")
-    cols[4].write("**CA 2**")
-    cols[5].write("**Total Correct**")
-    cols[6].write("**Total Wrong**")
+    cols[3].write("**CA**")
+    cols[4].write("**Total Correct**")
+    cols[5].write("**Total Wrong**")
     
     leaderboard = []
     
     for s in students:
         b_score = global_data["marks"][s] if global_data["completed_basic"][s] else 0
         a_score = global_data["adv_marks"][s] if global_data["completed_adv"][s] else 0
-        c1_score = global_data["ca1_marks"][s] if global_data["completed_ca1"][s] else 0
-        c2_score = global_data["ca2_marks"][s] if global_data["completed_ca2"][s] else 0
+        ca_score = global_data["ca_marks"][s] if global_data["completed_ca"][s] else 0
         
-        t_correct = b_score + a_score + c1_score + c2_score
+        t_correct = b_score + a_score + ca_score
         t_wrong = len(global_data["mistakes"][s])
         
         leaderboard.append((s, t_correct))
@@ -511,10 +496,9 @@ if app_mode == "Admin Dashboard":
         cols[0].write(f"**{s}**")
         cols[1].write(str(b_score) if global_data["completed_basic"][s] else "-")
         cols[2].write(str(a_score) if global_data["completed_adv"][s] else "-")
-        cols[3].write(str(c1_score) if global_data["completed_ca1"][s] else "-")
-        cols[4].write(str(c2_score) if global_data["completed_ca2"][s] else "-")
-        cols[5].write(str(t_correct))
-        cols[6].write(str(t_wrong))
+        cols[3].write(str(ca_score) if global_data["completed_ca"][s] else "-")
+        cols[4].write(str(t_correct))
+        cols[5].write(str(t_wrong))
 
     # --- MEDAL CEREMONY STAGE FORMAT ---
     leaderboard.sort(key=lambda x: x[1], reverse=True)
@@ -564,8 +548,7 @@ elif app_mode == "Student Portal":
         st.sidebar.header(f"👋 Welcome, {current_user}")
         st.sidebar.write(f"**Basic Score:** {global_data['marks'][current_user] if global_data['completed_basic'][current_user] else 'Pending'}")
         st.sidebar.write(f"**Advanced Score:** {global_data['adv_marks'][current_user] if global_data['completed_adv'][current_user] else 'Pending'}")
-        st.sidebar.write(f"**CA 1 Score:** {global_data['ca1_marks'][current_user] if global_data['completed_ca1'][current_user] else 'Pending'}")
-        st.sidebar.write(f"**CA 2 Score:** {global_data['ca2_marks'][current_user] if global_data['completed_ca2'][current_user] else 'Pending'}")
+        st.sidebar.write(f"**Current Affairs Score:** {global_data['ca_marks'][current_user] if global_data['completed_ca'][current_user] else 'Pending'}")
         st.sidebar.markdown("---")
         
         if st.sidebar.button("Logout"):
@@ -574,13 +557,12 @@ elif app_mode == "Student Portal":
             st.rerun()
             
         # ----------------- CONDITIONAL STUDENT DASHBOARD OVERVIEW -----------------
-        if global_data["completed_basic"][current_user] or global_data["completed_adv"][current_user] or global_data["completed_ca1"][current_user] or global_data["completed_ca2"][current_user]:
+        if global_data["completed_basic"][current_user] or global_data["completed_adv"][current_user] or global_data["completed_ca"][current_user]:
             b_score = global_data["marks"][current_user] if global_data["completed_basic"][current_user] else 0
             a_score = global_data["adv_marks"][current_user] if global_data["completed_adv"][current_user] else 0
-            c1_score = global_data["ca1_marks"][current_user] if global_data["completed_ca1"][current_user] else 0
-            c2_score = global_data["ca2_marks"][current_user] if global_data["completed_ca2"][current_user] else 0
+            ca_score = global_data["ca_marks"][current_user] if global_data["completed_ca"][current_user] else 0
             
-            total_correct = b_score + a_score + c1_score + c2_score
+            total_correct = b_score + a_score + ca_score
             total_wrong = len(global_data["mistakes"][current_user])
             
             st.markdown(f"<h3 style='color:#1e293b; margin-bottom: 20px;'>Dashboard Overview</h3>", unsafe_allow_html=True)
@@ -597,13 +579,12 @@ elif app_mode == "Student Portal":
 </div>"""
             st.markdown(overview_html, unsafe_allow_html=True)
             
-        test_phase = st.radio("Select Test Module:", ["Basic Test", "Advanced Test", "Current Affairs 1", "Current Affairs 2"], horizontal=True)
+        test_phase = st.radio("Select Test Module:", ["Basic Test", "Advanced Test", "Current Affairs"], horizontal=True)
 
         phase_keys = {
-            "Basic Test": ("basic", "📘 Basic Test Phase", "marks", "completed_basic", 300),
-            "Advanced Test": ("advanced", "📙 Advanced Test Phase", "adv_marks", "completed_adv", 330),
-            "Current Affairs 1": ("ca1", "🌍 Current Affairs 1 Phase", "ca1_marks", "completed_ca1", 240),
-            "Current Affairs 2": ("ca2", "🌎 Current Affairs 2 Phase", "ca2_marks", "completed_ca2", 240),
+            "Basic Test": ("basic", "📘 Basic Test Phase", "marks", "completed_basic", 150),
+            "Advanced Test": ("advanced", "📙 Advanced Test Phase", "adv_marks", "completed_adv", 180),
+            "Current Affairs": ("ca", "🌍 Current Affairs Phase", "ca_marks", "completed_ca", 660),
         }
         
         phase_id, header_title, score_key, completion_key, test_duration = phase_keys[test_phase]
@@ -614,11 +595,8 @@ elif app_mode == "Student Portal":
         if phase_id == "advanced" and not global_data["completed_basic"][current_user]:
             st.warning("⚠️ You must complete your assigned Basic Test before accessing the Advanced modules.")
         
-        elif phase_id == "ca1" and not global_data["completed_adv"][current_user]:
-            st.warning("⚠️ You must complete your assigned Advanced Test before accessing Current Affairs 1.")
-            
-        elif phase_id == "ca2" and not global_data["completed_ca1"][current_user]:
-            st.warning("⚠️ You must complete Current Affairs 1 before accessing Current Affairs 2.")
+        elif phase_id == "ca" and not global_data["completed_adv"][current_user]:
+            st.warning("⚠️ You must complete your assigned Advanced Test before accessing Current Affairs.")
             
         elif global_data[completion_key][current_user]:
             st.success("You have successfully submitted this test. Review your summary below.")

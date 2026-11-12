@@ -15,7 +15,6 @@ except ImportError:
 st.set_page_config(page_title="History Exam Portal", layout="wide", initial_sidebar_state="expanded")
 
 # ----------------- ANTI-CHEATING CSS & PREMIUM STYLING -----------------
-# Removed indentation so Streamlit does not render this as a code block
 st.markdown("""<style>
 /* Prevent text selection and copying */
 .stApp, p, h1, h2, h3, h4, h5, h6, span, div {
@@ -357,6 +356,13 @@ def get_global_data():
         "marks": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
         "adv_marks": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
         "ca_marks": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
+        
+        "time_taken": {
+            "basic": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
+            "advanced": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
+            "ca": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0}
+        },
+        
         "completed_basic": {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False},
         "completed_adv": {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False},
         "completed_ca": {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False},
@@ -370,10 +376,22 @@ def get_global_data():
 
 global_data = get_global_data()
 
+def format_time_str(seconds):
+    """Helper function to format seconds into m and s"""
+    m, s = divmod(seconds, 60)
+    if seconds > 0:
+        return f"{m}m {s}s"
+    return "-"
+
 def submit_test(phase_id, current_user, questions, test_phase, score_key, completion_key):
-    """Centralized test grading and saving logic"""
+    """Centralized test grading and saving logic with Time Tracking"""
     score = 0
     saved_answers = {}
+    
+    # Calculate time taken for this module
+    start_time = st.session_state.get(f"{phase_id}_start_time_{current_user}", time.time())
+    elapsed_time = int(time.time() - start_time)
+    global_data["time_taken"][phase_id][current_user] = elapsed_time
     
     for i, q_data_ in enumerate(questions):
         user_ans = st.session_state[f"{phase_id}_ans_{current_user}"].get(i)
@@ -428,6 +446,12 @@ if app_mode == "Admin Dashboard":
                 global_data["marks"][reset_student] = 0
                 global_data["adv_marks"][reset_student] = 0
                 global_data["ca_marks"][reset_student] = 0
+                
+                # Reset time tracking
+                global_data["time_taken"]["basic"][reset_student] = 0
+                global_data["time_taken"]["advanced"][reset_student] = 0
+                global_data["time_taken"]["ca"][reset_student] = 0
+                
                 global_data["completed_basic"][reset_student] = False
                 global_data["completed_adv"][reset_student] = False
                 global_data["completed_ca"][reset_student] = False
@@ -447,6 +471,13 @@ if app_mode == "Admin Dashboard":
                 global_data["marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0}
                 global_data["adv_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0}
                 global_data["ca_marks"] = {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0}
+                
+                global_data["time_taken"] = {
+                    "basic": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
+                    "advanced": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0},
+                    "ca": {"Rajat": 0, "Manab": 0, "Subho": 0, "Srijani": 0}
+                }
+                
                 global_data["completed_basic"] = {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False}
                 global_data["completed_adv"] = {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False}
                 global_data["completed_ca"] = {"Rajat": False, "Manab": False, "Subho": False, "Srijani": False}
@@ -473,13 +504,17 @@ if app_mode == "Admin Dashboard":
         st.rerun()
     
     st.subheader("Global Scoreboard")
-    cols = st.columns(6)
+    cols = st.columns(10)
     cols[0].write("**Student**")
     cols[1].write("**Basic**")
     cols[2].write("**Adv**")
     cols[3].write("**CA**")
     cols[4].write("**Total Correct**")
     cols[5].write("**Total Wrong**")
+    cols[6].write("**Basic Time**")
+    cols[7].write("**Adv Time**")
+    cols[8].write("**CA Time**")
+    cols[9].write("**Total Time**")
     
     leaderboard = []
     
@@ -491,7 +526,14 @@ if app_mode == "Admin Dashboard":
         t_correct = b_score + a_score + ca_score
         t_wrong = len(global_data["mistakes"][s])
         
-        leaderboard.append((s, t_correct))
+        # Calculate Time
+        b_time = global_data["time_taken"]["basic"][s] if global_data["completed_basic"][s] else 0
+        a_time = global_data["time_taken"]["advanced"][s] if global_data["completed_adv"][s] else 0
+        c_time = global_data["time_taken"]["ca"][s] if global_data["completed_ca"][s] else 0
+        t_time = b_time + a_time + c_time
+        
+        # Store for Medal Ceremony Tie-Breaker
+        leaderboard.append((s, t_correct, t_time))
         
         cols[0].write(f"**{s}**")
         cols[1].write(str(b_score) if global_data["completed_basic"][s] else "-")
@@ -499,12 +541,21 @@ if app_mode == "Admin Dashboard":
         cols[3].write(str(ca_score) if global_data["completed_ca"][s] else "-")
         cols[4].write(str(t_correct))
         cols[5].write(str(t_wrong))
+        
+        cols[6].write(format_time_str(b_time))
+        cols[7].write(format_time_str(a_time))
+        cols[8].write(format_time_str(c_time))
+        cols[9].write(f"**{format_time_str(t_time)}**")
 
     # --- MEDAL CEREMONY STAGE FORMAT ---
-    leaderboard.sort(key=lambda x: x[1], reverse=True)
+    # Smart Sorting: Sort by highest score first (-x[1]). If scores tie, sort by fastest time (x[2]).
+    leaderboard.sort(key=lambda x: (-x[1], x[2]))
     
-    top_1_name, top_1_score = leaderboard[0]
-    top_2_name, top_2_score = leaderboard[1]
+    top_1_name, top_1_score, top_1_time = leaderboard[0]
+    top_2_name, top_2_score, top_2_time = leaderboard[1]
+    
+    t1_time_str = f" | {format_time_str(top_1_time)}" if top_1_time > 0 else ""
+    t2_time_str = f" | {format_time_str(top_2_time)}" if top_2_time > 0 else ""
     
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.markdown("<h3 style='text-align: center; color: #1e293b;'>🏆 Medal Ceremony</h3>", unsafe_allow_html=True)
@@ -512,12 +563,12 @@ if app_mode == "Admin Dashboard":
     podium_html = f"""<div style="display: flex; justify-content: center; align-items: flex-end; gap: 30px; margin-top: 30px;">
 <div style="text-align: center;">
 <div style="font-size: 22px; font-weight: 700; color: #334155;">🥈 {top_2_name}</div>
-<div style="font-size: 16px; color: #64748b; margin-bottom: 12px;">{top_2_score} pts</div>
+<div style="font-size: 14px; color: #64748b; margin-bottom: 12px; font-weight: bold;">{top_2_score} pts{t2_time_str}</div>
 <div style="background: linear-gradient(135deg, #cbd5e1 0%, #94a3b8 100%); height: 130px; width: 140px; border-radius: 12px 12px 0 0; display: flex; justify-content: center; align-items: center; color: white; font-size: 45px; font-weight: 900; box-shadow: 0 10px 20px rgba(0,0,0,0.15);">2</div>
 </div>
 <div style="text-align: center;">
 <div style="font-size: 26px; font-weight: 800; color: #1e293b;">🥇 {top_1_name}</div>
-<div style="font-size: 18px; color: #64748b; margin-bottom: 12px;">{top_1_score} pts</div>
+<div style="font-size: 15px; color: #64748b; margin-bottom: 12px; font-weight: bold;">{top_1_score} pts{t1_time_str}</div>
 <div style="background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%); height: 180px; width: 140px; border-radius: 12px 12px 0 0; display: flex; justify-content: center; align-items: center; color: white; font-size: 55px; font-weight: 900; box-shadow: 0 15px 25px rgba(0,0,0,0.2);">1</div>
 </div>
 </div>"""
@@ -600,6 +651,11 @@ elif app_mode == "Student Portal":
             
         elif global_data[completion_key][current_user]:
             st.success("You have successfully submitted this test. Review your summary below.")
+            
+            # Show Time Taken for this Specific Phase
+            time_t = global_data["time_taken"][phase_id][current_user]
+            m, s = divmod(time_t, 60)
+            st.info(f"⏱️ **Time Taken:** {m} minutes and {s} seconds")
             
             st.markdown('<div class="analysis-card">', unsafe_allow_html=True)
             st.subheader("Detailed Test Review")

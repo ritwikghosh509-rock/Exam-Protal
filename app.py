@@ -159,12 +159,8 @@ PDF_MAPPING_CA = {
 
 # ----------------- BULLETPROOF PDF PARSER -----------------
 def clean_pdf_text(text):
-    """Strips invisible PDF artifacts and completely repairs broken words"""
-    # 1. Stitch together words broken across lines by the PDF reader (e.g. "Indi\na.")
-    text = re.sub(r'([a-zA-Z]{2,})\s*\n\s*([a-zA-Z]{1,2}[\.\:\,\;\)]?(?:\s*[\:\-\.])?)\s*\n', r'\1\2\n', text)
-    # 2. Fix hyphenated word breaks
+    """Strips invisible PDF artifacts and fixes safe hyphenations"""
     text = re.sub(r'([a-zA-Z]+)\-\s*\n\s*([a-zA-Z]+)', r'\1\2', text)
-    # 3. Remove invisible artifacts
     return re.sub(r'[\ue000-\uf8ff\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ufffd]', '', text).strip()
 
 @st.cache_data
@@ -176,14 +172,10 @@ def extract_questions_from_pdf(filepath):
         raw_text = "\n" + "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
         full_text = clean_pdf_text(raw_text)
         
-        # Split document securely at Q1., Question 1:, including optional difficulty tags.
-        # Capturing groups are used so we don't throw away the question numbers when splitting!
-        parts = re.split(r'(?i)(?:\n|^)\s*(?:(?:STRAIGHTFORWARD|TRICKY|IN-DEPTH)\s+)?(Q(?:uestion)?\s*\d+[\s\.\-\:])', full_text)
-        
+        # Split document securely at Q1. Capturing group preserves the original Question Number.
+        parts = re.split(r'(?i)(?:\n|^)\s*(?:(?:STRAIGHTFORWARD|TRICKY|IN-DEPTH)\s+)?(Q(?:uestion)?\s*\d+[\s\.\-\:]*)', full_text)
         parsed_questions = []
 
-        # We start from 1, stepping by 2 because re.split with capturing groups returns:
-        # [Pre-text, Splitter 1, Block 1, Splitter 2, Block 2...]
         for i in range(1, len(parts), 2):
             if i + 1 >= len(parts):
                 break
@@ -193,120 +185,119 @@ def extract_questions_from_pdf(filepath):
             if not block:
                 continue
                 
-            # Reattach the question number so it doesn't get lost
             block = f"{q_header} {block}"
             
+            # Strip all-caps headings from the top of the block but preserve Q-number
+            raw_lines = [line.strip() for line in block.split('\n') if line.strip()]
+            while raw_lines:
+                first_line = raw_lines[0]
+                q_match = re.match(r'(?i)^(Q(?:uestion)?\s*\d+[\.\:\-]?)', first_line)
+                if q_match:
+                    # Clean aggressive analytical tags, but perfectly preserve the Question Number
+                    if any(x in first_line.upper() for x in ["FORMAT", "STATEMENT-BASED", "MATCH-THE", "CHRONOLOGICAL", "ASSERTION", "INCORRECT"]):
+                        raw_lines[0] = q_match.group(1)
+                    break
+                if first_line.isupper() or re.match(r'(?i)^(?:POST-GUPTA|CHOLA|BONUS).*', first_line):
+                    if first_line.endswith('?'):
+                        break
+                    raw_lines.pop(0)
+                else:
+                    break
+            block = "\n".join(raw_lines)
+            
             # 1. Capture the correct answer line securely
-            ans_match = re.search(r'(?im)^[ \t]*(?:Correct\s+)?Answer\s*[\:\-]\s*([\(]?[A-Da-d][\)\.]?)(.*)', block)
+            ans_match = re.search(r'(?i)\b(?:Correct\s+)?Answer\s*[\:\-]\s*([\(]?[A-Da-d][\)\.]?)', block)
             correct_letter = re.sub(r'[\(\)\.]', '', ans_match.group(1)).upper() if ans_match else ""
             
-            # 2. Capture explicit Explanation
-            exp_match = re.search(r'(?im)^[ \t]*(?:Detailed\s+)?Explanation\s*[\:\-]\s*(.*)', block, re.DOTALL)
-            explanation = ""
-            if exp_match:
-                explanation = exp_match.group(1)
+            # 2. Capture explicit Explanation OR "Why it's tricky"
+            exp_match = re.search(r'(?i)(?:(?:Detailed\s+)?Explanation|Why it[\'\’]s tricky)\s*[\:\-]\s*(.*)', block, re.DOTALL)
+            explanation = exp_match.group(1).strip() if exp_match else ""
             
-            # 3. Clean block to isolate Question & Options safely
             q_and_opts = block
             
-            # Strip explicit explanation block completely
-            q_and_opts = re.sub(r'(?i)\b(?:Detailed\s+)?Explanation\s*[\:\-].*', '', q_and_opts, flags=re.DOTALL)
+            # 3. SURGICAL METADATA REMOVAL (Fixes Basics "Why it's tricky" bleeding into Option D)
+            # Remove Explanation block completely
+            q_and_opts = re.sub(r'(?i)(?:(?:Detailed\s+)?Explanation|Why it[\'\’]s tricky)\s*[\:\-][\s\S]*', '', q_and_opts)
             
-            # RESCUE STRANDED MATCHING LISTS (Rescues a., b., c. OR 1., 2., 3. if dumped at bottom)
-            match_list_pattern = r'(?im)^[ \t]*(?:a\.|i\.|1\.)[ \t]+[^\n]+(?:\n[ \t]*(?:[b-h]\.|i{1,3}\.|iv\.|v\.|vi\.|[2-9]\.)[ \t]+[^\n]+)+'
-            stranded_lists = re.findall(match_list_pattern, q_and_opts)
-            for slist in stranded_lists:
-                q_and_opts = q_and_opts.replace(slist, '')
-                # Inject the rescued list immediately before the first option (A)
-                q_and_opts = re.sub(r'(?im)(^[ \t]*\([A-D]\)|^[ \t]*[A-D]\))', slist + r'\n\n\1', q_and_opts, count=1)
-            
-            # Strip implicit explanation (if no explicit "Explanation:" found)
-            if not exp_match and ans_match:
-                ans_full_line = ans_match.group(0)
-                ans_idx = q_and_opts.find(ans_full_line)
-                if ans_idx != -1:
-                    text_after_ans = q_and_opts[ans_idx + len(ans_full_line):]
-                    if not re.search(r'(?im)^[ \t]*(\([A-Da-d]\)|[A-Da-d]\))', text_after_ans):
-                        if not explanation:
-                            explanation = text_after_ans.strip()
-                        q_and_opts = q_and_opts[:ans_idx + len(ans_full_line)]
-            
-            # Strip Answer line itself completely
-            q_and_opts = re.sub(r'(?im)^[ \t]*(?:Correct\s+)?Answer\s*[\:\-].*\n?', '', q_and_opts)
-            
-            # Strip structural metadata that leaks into options
-            q_and_opts = re.sub(r'(?i)[\-\s]*Exam Source\s*[\:\-].*$', '', q_and_opts, flags=re.MULTILINE)
-            q_and_opts = re.sub(r'(?i)[\-\s]*Exam Shift\s*[\:\-].*$', '', q_and_opts, flags=re.MULTILINE)
-            q_and_opts = re.sub(r'(?i)[\-\s]*Topic\s*[\:\-].*$', '', q_and_opts, flags=re.MULTILINE)
+            # Remove Answer line safely without touching lines below it (preserves CA Q7 options)
+            q_and_opts = re.sub(r'(?i)\b(?:Correct\s+)?Answer\s*[\:\-]\s*[\(]?[A-Da-d][\)\.]?[^\n]*', '', q_and_opts)
+                
+            # Clean lingering metadata from the top block
+            marker_lookahead = r'(?=\n[ \t]*\([A-D]\)|\n[ \t]*[A-D]\)|\Z)'
+            q_and_opts = re.sub(r'(?i)^[ \t]*[\-\s]*Exam Source\s*[\:\-][\s\S]*?' + marker_lookahead, '', q_and_opts, flags=re.MULTILINE)
+            q_and_opts = re.sub(r'(?i)^[ \t]*[\-\s]*Exam Shift\s*[\:\-][\s\S]*?' + marker_lookahead, '', q_and_opts, flags=re.MULTILINE)
+            q_and_opts = re.sub(r'(?im)^[ \t]*Topic:.*$', '', q_and_opts)
             q_and_opts = re.sub(r'(?im)^[ \t]*Page \d+ of \d+.*$', '', q_and_opts)
             q_and_opts = re.sub(r'(?im)^.*RRB NTPC.*$', '', q_and_opts)
 
-            # Option Marker Definition: strictly matching A), B), C), D) or (A), (B), (C), (D)
-            marker_pattern = r'(\([A-Da-d]\)|[A-Da-d]\))'
+            # Option Marker Definition: strictly uppercase A), B), C), D) or (A), (B), (C), (D)
+            marker_pattern = r'(\([A-D]\)|[A-D]\))'
             
-            # FORCIBLY inject a newline before any A), B), C), D) found in the middle of a text line
-            # This instantly fixes 2-column squishing where options overlap with the question text
-            q_and_opts = re.sub(r'(?i)([a-z0-9\.\?\,\;])\s*' + marker_pattern + r'\s+', r'\1\n\2 ', q_and_opts)
-            q_and_opts = re.sub(r'(?i)(?:\s+|^)' + marker_pattern + r'\s+', r'\n\1 ', q_and_opts)
+            # --- LINE INJECTOR ---
+            # Forcibly inject a newline before any A), B), C), D) to cure text squishing
+            q_and_opts = re.sub(r'(?i)(?<=\S)\s*' + marker_pattern + r'(?!\s*\:)\s+', r'\n\1 ', q_and_opts)
             
-            # 4. Extract Options using Start-Of-Line Matcher
-            opt_pattern = r'(?im)^[ \t]*' + marker_pattern + r'\s+([\s\S]*?)(?=\n[ \t]*' + marker_pattern + r'\s+|\Z)'
-            option_matches = list(re.finditer(opt_pattern, q_and_opts))
+            # --- OPTION EXTRACTION (Reverts to standard Split method) ---
+            # We strictly identify the very first option marker to chop the question cleanly from the options.
+            first_opt_match = re.search(r'(?im)^[ \t]*' + marker_pattern + r'(?!\s*\:)\s+', q_and_opts)
             
-            if len(option_matches) >= 4:
-                # Always take the last 4 to safely bypass internal match-the-following lists
-                option_matches = option_matches[-4:] 
-            
-            if len(option_matches) >= 2:
-                # Get the raw question text (everything before the first real option)
-                first_opt_idx = min(opt.start() for opt in option_matches)
-                question_text_raw = q_and_opts[:first_opt_idx].strip()
+            if first_opt_match:
+                # The question is everything BEFORE the first option
+                question_text_raw = q_and_opts[:first_opt_match.start()].strip()
+                options_block = q_and_opts[first_opt_match.start():].strip()
                 
-                # Filter out document headers without deleting real question lines
-                raw_lines = [line.strip() for line in question_text_raw.split('\n') if line.strip()]
-                clean_q_lines = []
-                for line in raw_lines:
-                    # Safety filter for structural headers
-                    if re.match(r'(?i)^(?:PART|Target Exam|Syllabus Focus|Combined Master|Subject:|Focus Area:|Pattern Benchmark|SECTION|This is for|JANUARY \d+ CURRENT AFFAIRS|■■Part|Practice Question Bank|Question Difficulty|Compiled for|Bonus Tricky Multi-Statement Questions).*', line):
-                        continue
-                    if re.match(r'(?i)^(?:shift\-pattern\)?|option\)?|Topic:|Why it\'s tricky:).*', line):
-                        continue
-                    # Safely remove all-caps headings at the start of the question (BUT preserve Q1, Q2 etc)
-                    if len(clean_q_lines) == 0 and line.isupper() and not re.search(r'(?i)^Q(?:uestion)?\s*\d+', line):
-                        continue
-                    clean_q_lines.append(line)
+                # Now extract options from the options_block
+                opt_pattern = r'(?im)^[ \t]*' + marker_pattern + r'(?!\s*\:)\s+([\s\S]*?)(?=\n[ \t]*' + marker_pattern + r'(?!\s*\:)\s+|\Z)'
+                option_matches = list(re.finditer(opt_pattern, options_block))
+                
+                if len(option_matches) >= 4:
+                    option_matches = option_matches[-4:] 
+                
+                if len(option_matches) >= 2:
+                    options_dict = {}
+                    for opt in option_matches:
+                        opt_letter = re.sub(r'[\(\)\.]', '', opt.group(1)).upper()
+                        opt_text = opt.group(2).strip()
+                        opt_text = re.sub(r'\s+', ' ', opt_text) # Flatten internal newlines inside the option
+                        options_dict[opt_letter] = opt_text
+                        
+                    # Filter out document headers without deleting real question lines
+                    raw_lines = [line.strip() for line in question_text_raw.split('\n') if line.strip()]
+                    clean_q_lines = []
+                    for line in raw_lines:
+                        # Final safety net for rogue headers
+                        if re.match(r'(?i)^(?:PART|Target Exam|Syllabus Focus|Combined Master|Subject:|Focus Area:|Pattern Benchmark|SECTION|This is for|JANUARY \d+ CURRENT AFFAIRS|■■Part|Practice Question Bank|Question Difficulty|Compiled for|Bonus Tricky Multi-Statement Questions).*', line):
+                            continue
+                        if re.match(r'(?i)^(?:shift\-pattern\)?|option\)?|Topic:|Why it\'s tricky:).*', line):
+                            continue
+                        clean_q_lines.append(line)
+                        
+                    question_text = "\n".join(clean_q_lines).strip()
                     
-                question_text = "\n".join(clean_q_lines).strip()
-                
-                # Clean trailing metadata from explanation
-                explanation = re.sub(r'(?i)Page \d+ of \d+.*', '', explanation).strip()
-                explanation = explanation.replace('\n', ' ')
-                
-                # Dictionary Auto-Sorter for options (fixes Column Jumbling)
-                options_dict = {}
-                for opt in option_matches:
-                    opt_letter = re.sub(r'[\(\)\.]', '', opt.group(1)).upper()
-                    opt_text = opt.group(2).replace('\n', ' ')
-                    clean_opt = re.sub(r'(?i)\(\s*correct\s*\)', '', opt_text).strip()
-                    options_dict[opt_letter] = clean_opt
+                    # PROTECT LISTS FROM STREAMLIT MARKDOWN DELETION 
+                    # This injects a zero-width space (&#8203;) after 1., 2., a., b. so they render identically to the PDF.
+                    question_text = re.sub(r'(?m)^([ \t]*\d+\.)[ \t]+', r'\1&#8203; ', question_text)
+                    question_text = re.sub(r'(?m)^([ \t]*[a-zA-Z]+\.)[ \t]+', r'\1&#8203; ', question_text)
                     
-                # Forces alphabetical sorting (A, B, C, D) so they never display out of order
-                sorted_letters = sorted(options_dict.keys())
-                options = [options_dict[k] for k in sorted_letters]
-                
-                if correct_letter in options_dict:
-                    correct_answer = options_dict[correct_letter]
-                elif options:
-                    correct_answer = options[0]
+                    explanation = re.sub(r'(?i)Page \d+ of \d+.*', '', explanation).strip()
+                    explanation = explanation.replace('\n', ' ')
                     
-                if question_text and options:
-                    parsed_questions.append({
-                        "q": question_text,
-                        "options": options,
-                        "correct": correct_answer,
-                        "exp": explanation,
-                        "topic": "History/Geography/Current Affairs"
-                    })
+                    sorted_letters = sorted(options_dict.keys())
+                    options = [options_dict[k] for k in sorted_letters]
+                    
+                    if correct_letter in options_dict:
+                        correct_answer = options_dict[correct_letter]
+                    elif options:
+                        correct_answer = options[0]
+                        
+                    if question_text and options:
+                        parsed_questions.append({
+                            "q": question_text,
+                            "options": options,
+                            "correct": correct_answer,
+                            "exp": explanation,
+                            "topic": "History/Geography/Current Affairs"
+                        })
                     
         return parsed_questions
     except Exception as e:

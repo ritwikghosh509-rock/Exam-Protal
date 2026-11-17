@@ -139,21 +139,21 @@ ADMIN_PASSWORD = "Admin123"
 PDF_MAPPING_BASIC = {
     "Rajat": ["Basics_15-11.pdf"],
     "Manab": ["Basics_15-11.pdf"],
-    "Subho": ["Basic_12-11.pdf"],
+    "Subho": ["Basics_15-11.pdf"],
     "Srijani": ["Basic_12-11.pdf"]
 }
 
 PDF_MAPPING_ADVANCED = {
     "Rajat": ["Advance_15-11.pdf"],
     "Manab": ["Advance_15-11.pdf"],
-    "Subho": ["Advance_12-11.pdf"],
+    "Subho": ["Advance_15-11.pdf"],
     "Srijani": ["Advance_12-11.pdf"]
 }
 
 PDF_MAPPING_CA = {
     "Rajat": ["CA_15-11.pdf"],
     "Manab": ["CA_15-11.pdf"],
-    "Subho": ["Jan_Currentaffairs.pdf"],
+    "Subho": ["CA_15-11.pdf"],
     "Srijani": ["Jan_Currentaffairs.pdf"]
 }
 
